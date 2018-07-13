@@ -1,6 +1,6 @@
 import torch
 
-def build_opt(model, args):
+def build_opt(args, model):
     if args.optimizer.lower() == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.decay)
     elif args.optimizer.lower() == 'rmsprop':
@@ -11,4 +11,4 @@ def build_opt(model, args):
             momentum=args.momentum, weight_decay=args.decay)
     else:
         raise Exception()
-    return opt
+    return optimizer

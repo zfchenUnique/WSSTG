@@ -9,6 +9,8 @@ import random
 import scipy.io as sio
 import copy
 import torch
+from util.get_image_size import get_image_size
+from evalDet import *
 import pdb
 
 class otbImDataloader(data.Dataset):
@@ -27,12 +29,13 @@ class otbImDataloader(data.Dataset):
         self.imH = 224
         self.offVisFlag =True
 
-    def image_samper_set_up(self, imNum=1, rpNum=20, capNum=1, maxWordNum=15, trainFlag=True):
+    def image_samper_set_up(self, imNum=1, rpNum=20, capNum=1, maxWordNum=15, trainFlag=True, rndSmpImgFlag=True):
         self.smpImNum= imNum
         self.rpNum = rpNum
         self.capNum = capNum
         self.trainFlag= trainFlag
         self.maxWordNum = maxWordNum
+        self.rndSmpImgFlag = rndSmpImgFlag
         if(self.trainFlag):
             self.capList=self.data['trainCap']
             self.vdNameList=self.data['trainName']
@@ -88,14 +91,23 @@ class otbImDataloader(data.Dataset):
         # word embedding
         capList= self.capList[index][0]
         wordEmbMatrix= np.zeros((self.maxWordNum, 300), dtype=np.float32)         
+        valCount=0
         for i, word in enumerate(capList):
-            if(i>self.maxWordNum):
+            if word in self.dict['out_voca']:
+                #print('Invalid word: ',  idx, word, len(self.dict['word2vec']))
+                continue
+            if(valCount>self.maxWordNum):
                 break
             idx = self.dict['word2idx'][word]
-            wordEmbMatrix[i, :]= self.dict['word2vec'][idx]
-
+            wordEmbMatrix[valCount, :]= self.dict['word2vec'][idx]
+            valCount +=1
+        capLen = valCount+1
         #image List
-        subSmpIdx = random.sample(list(range(len(self.gtBbxDict[index]))), self.smpImNum)
+        if self.rndSmpImgFlag:
+            subSmpIdx = random.sample(list(range(len(self.gtBbxDict[index]))), self.smpImNum)
+        else:
+            subSmpIdx = list(range(self.smpImNum))
+        
         imList = list()
         rpImList = list()
         lblTxt= index
@@ -107,40 +119,210 @@ class otbImDataloader(data.Dataset):
             rpList = visInfo['rois'][:self.rpNum] 
             imgDis = visInfo['roiFtr'][:self.rpNum]
             # to modify the rois
-            newRpList = rpList
+            newRpList = copy.deepcopy(rpList)
             imList.append(torch.from_numpy(imgDis)) 
             rpImList.append(newRpList)
             lblListVis.append(idx)
-        return torch.from_numpy(wordEmbMatrix), torch.stack( imList, 0), lblTxt, lblListVis,rpImList 
+        return torch.from_numpy(wordEmbMatrix), torch.stack( imList, 0), lblTxt, lblListVis,rpImList, capLen 
+
+
+    def pull_item_dis_test(self, index):
+        wordEmb, imEmb, lblTxt, lblListVis, rpImList, capLen = self.pull_item_dis(index)
+        # modify region proposals according to 
+        vdName = self.vdNameList[lblTxt]
+        rpListFull= list()
+        bbxGtList= list()
+        #pdb.set_trace()
+        for i, idx in enumerate(lblListVis):
+            imFullPath = self.data['vFd']+'/'+vdName + '/img/'+ \
+                    self.frameDict[lblTxt][idx]+'.jpg'
+            imSize =  np.array(get_image_size(imFullPath))
+            rpList =  rpMatPreprocess(rpImList[i], imSize)
+            rpListFull.append(rpList)
+            bbxGtList.append(self.gtBbxDict[lblTxt][idx])
+        
+        return wordEmb, imEmb, lblTxt, lblListVis, rpListFull, capLen, bbxGtList
+
 
     def __len__(self):
         return len(self.vdNameList)
 
     def __getitem__(self, index):
-        if not self.offVisFlag:
+        if not self.offVisFlag and self.trainFlag:
             wordEmd, img, proposals = self.pull_item_vis(index)
+        elif self.offVisFlag and self.rndSmpImgFlag:
+            wordEmbMatrix, img, lbl, frmList, proposals, capLen= self.pull_item_dis(index)
+            return img,  wordEmbMatrix, lbl, capLen, proposals
         else:
-            wordEmbMatrix, img, lbl, frmList, proposals= self.pull_item_dis(index)
-        return img,  wordEmbMatrix, lbl
+            wordEmbMatrix, img, lbl, frmList, proposals, capLen, bbxGtList= self.pull_item_dis_test(index)
+            return img,  wordEmbMatrix, lbl, capLen, proposals, bbxGtList, frmList
 
-    
+
+class a2dImDataloader(data.Dataset):
+    def __init__(self, annoFile, dictFile, rpFd):
+        self.data = pickleload(annoFile)
+        self.dict = pickleload(dictFile)
+        self.data['rpFd'] = rpFd
+
+        self.smpImNum= 1 
+        self.rpNum = 20
+        self.maxWordNum =15
+        self.imW = 224
+        self.imH = 224
+        self.offVisFlag =True
+        self.indexUsed = list()
+
+    def image_samper_set_up(self, imNum=1, rpNum=20, capNum=1, maxWordNum=15, trainFlag=True, rndSmpImgFlag=True, usedBadWord=False):
+        self.smpImNum= imNum
+        self.rpNum = rpNum
+        self.capNum = capNum
+        self.trainFlag= trainFlag
+        self.maxWordNum = maxWordNum
+        self.rndSmpImgFlag = rndSmpImgFlag
+        self.usedBadWord = usedBadWord
+        setAnnotor = 0
+        if not self.trainFlag:
+            setAnnotor =1
+        self.indexUsed = list()
+        for i, cap in enumerate(self.data['cap']): 
+            vdName = self.data['vd'][i] 
+            if(self.data['splitDict'][vdName]==setAnnotor):
+                self.indexUsed.append(i)
+
+    def resize_img_rp(img, imH, imW, rpList):
+        h, w, c= img.shape
+        hRatio = imH/h
+        wRatio = imW/w
+        newRpList= list()
+        for i, rp in enumerate(rpList):
+            newRp  =copy.deepcopy(rp) 
+            newRp[0] = rp[0]*wRatio
+            newRp[2] = rp[2]*wRatio
+            newRp[1] = rp[1]*hRatio
+            newRp[3] = rp[3]*hRatio
+            newRpList.append(newRp)
+        res =cv2.resize(img, size=(imH, imW))
+        return res, newRpList
+
+    def pull_item_dis(self, index1):
+        # word embedding
+        idxUsed = self.indexUsed[index1]
+        capList= self.data['cap'][idxUsed]
+        wordEmbMatrix= np.zeros((self.maxWordNum, 300), dtype=np.float32)         
+        valCount=0
+        for i, word in enumerate(capList):
+            if (not self.usedBadWord) and word in self.dict['out_voca']:
+                #print('Invalid word: ',  idx, word, len(self.dict['word2vec']))
+                continue
+            if(valCount>=self.maxWordNum):
+                break
+            idx = self.dict['word2idx'][word]
+            wordEmbMatrix[valCount, :]= self.dict['word2vec'][idx]
+            valCount +=1
+        capLen = valCount+1
+        #image List
+        if self.rndSmpImgFlag:
+            subSmpIdx = random.sample(list(range(len(self.data['bbxList'][idxUsed]))), self.smpImNum)
+        else:
+            if self.smpImNum == -1:
+                subSmpIdx = list(range(len(self.data['bbxList'][idxUsed])))
+            else:
+                subSmpIdx = list(range(self.smpImNum))
+        
+        imList = list()
+        rpImList = list()
+        lblListVis = list()
+        vdName = self.data['vd'][idxUsed] 
+        lblVideo =  self.data['vd2idx'][vdName]
+        for i, idx in enumerate(subSmpIdx):
+#            print(idxUsed, idx)
+            imgPath = self.data['rpFd']+'/' + vdName + '/' + self.data['frmList'][idxUsed][idx]+'.pd' 
+            visInfo = pickleload(imgPath) 
+            rpList = visInfo['rois'][:self.rpNum] 
+            imgDis = visInfo['roiFtr'][:self.rpNum]
+            # to modify the rois
+            newRpList = copy.deepcopy(rpList)
+            imList.append(torch.from_numpy(imgDis)) 
+            rpImList.append(newRpList)
+            lblListVis.append(idx)
+        return torch.from_numpy(wordEmbMatrix), torch.stack( imList, 0), lblVideo, lblListVis,rpImList, capLen 
+
+    def pull_item_dis_test(self, index):
+        wordEmb, imEmb, lblVideo, lblListVis, rpImList, capLen = self.pull_item_dis(index)
+        # modify region proposals according to 
+        vdName = self.data['idx2vd'][lblVideo]
+        rpListFull= list()
+        bbxGtList= list()
+        #pdb.set_trace()
+        idxUsed = self.indexUsed[index]
+        for i, idx in enumerate(lblListVis):
+            imgPath = self.data['rpFd']+'/' + vdName + '/' \
+                    + self.data['frmList'][idxUsed][idx]+'.pd' 
+            visInfo = pickleload(imgPath) 
+            imScale = visInfo['imFo'][0, 2] 
+            rpList =  rpMatPreprocess(rpImList[i], imScale, isA2D=True)
+            rpListFull.append(rpList)
+            bbxGt=copy.deepcopy(list(self.data['bbxList'][idxUsed][idx]))
+            bbxGt[2] = bbxGt[2] -bbxGt[0]
+            bbxGt[3] = bbxGt[3] -bbxGt[1]
+            bbxGtList.append(bbxGt)
+        return wordEmb, imEmb, lblVideo, lblListVis, rpListFull, capLen, bbxGtList, idxUsed
+
+    def __len__(self):
+        return len(self.indexUsed)
+
+    def __getitem__(self, index):
+        if not self.offVisFlag and self.trainFlag:
+            wordEmd, img, proposals = self.pull_item_vis(index)
+        elif self.offVisFlag and self.rndSmpImgFlag:
+            wordEmbMatrix, img, lbl, frmList, proposals, capLen= self.pull_item_dis(index)
+            return img,  wordEmbMatrix, lbl, capLen, proposals
+        else:
+            wordEmbMatrix, img, lbl, frmList, proposals, capLen, bbxGtList, capLbl= self.pull_item_dis_test(index)
+            return img,  wordEmbMatrix, lbl, capLen, proposals, bbxGtList, frmList, capLbl
+
+
+
 def dis_collate(batch):
     targets = []
     imgs = []
     text = []
+    rprList = []
+    maxLen = batch[0][3]
+    gtBbxList = []
+    frmList= []
+    lblCap = []
     for sample in batch:
         imgs.append(sample[0])
         text.append(sample[1])
         targets.append(sample[2])
-    
-    return torch.stack(imgs, 0), torch.stack(text, 0),targets
+        if(sample[3]>maxLen):
+            maxLen = sample[3]
+        rprList.append(sample[4])
+        if(len(sample)>5):
+            gtBbxList.append(sample[5])
+            frmList.append(sample[6])
+            lblCap.append(sample[7])
+    # shorten the word EMb for faster training
+    capMatrix = torch.stack(text, 0)
+    capMatrix = capMatrix[:, :maxLen, :]
+    if len(batch[0])>5:
+        return torch.cat(imgs, 0), capMatrix, targets, rprList, gtBbxList, frmList, lblCap 
+    return torch.stack(imgs, 0), capMatrix, targets 
 
 def build_dataloader(opt):
     if opt.dbSet=='otb':
         dataset = otbImDataloader(inFd='/disk2/zfchen/data/OTB_sentences',
-            annoFile='../data/annForDb_otb.pd',
+            annoFile='../data/annForDb_otbV2.pd',
             dictFile='../data/dictForDb_otb.pd',
             rpFd='/disk2/zfchen/data/otbRpn')
+        dataset.image_samper_set_up(rpNum=opt.k_prp, imNum=opt.k_img, \
+                maxWordNum=opt.maxWL,trainFlag=True)
+    elif opt.dbSet=='a2d':
+        annoFile = '../data/annoted_a2d.pd'
+        dictFile = '../data/dictForDb_a2d.pd'
+        rpFd ='/disk2/zfchen/data/a2dRP'
+        dataset = a2dImDataloader(annoFile, dictFile, rpFd)
         dataset.image_samper_set_up(rpNum=opt.k_prp, imNum=opt.k_img, \
                 maxWordNum=opt.maxWL,trainFlag=True)
     else:
@@ -148,10 +330,9 @@ def build_dataloader(opt):
         return
      
     data_loader = data.DataLoader(dataset,  opt.batchSize, \
-            num_workers=opt.num_workers, collate_fn=dis_collate, pin_memory=True)
-    return data_loader
-
-
+            num_workers=opt.num_workers, collate_fn=dis_collate, \
+            shuffle=True, pin_memory=True)
+    return data_loader, dataset
 
 if __name__=='__main__':
     otbTester = otbImDataloader(inFd='/disk2/zfchen/data/OTB_sentences',

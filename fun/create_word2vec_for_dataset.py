@@ -4,7 +4,7 @@ sys.path.append('../')
 sys.path.append('../util')
 
 from gensim.models import KeyedVectors
-from  datasetParser import get_otb_data
+from  datasetParser import *
 import numpy as np
 from mytoolbox import pickledump, set_debugger
 from util.base_parser import BaseParser
@@ -19,6 +19,12 @@ class dictParser(BaseParser):
         self.add_argument('--dictPath', default='/disk2/zfchen/data/dict/GoogleNews-vectors-negative300.bin', type=str)
         self.add_argument('--setName', default='otb', type=str)
         self.add_argument('--setOutPath', default='../data/annForDb', type=str)
+        self.add_argument('--annFn', default='', type=str)
+        self.add_argument('--annFd', default='', type=str)
+        self.add_argument('--annIgListFn', default='', type=str)
+        self.add_argument('--annOriFn', default='', type=str)
+            
+            
 
 def parse_args():
     parser = dictParser()
@@ -32,6 +38,19 @@ def buildVoc(concaList):
             for ele in subCapList:
                 if ele not in vocList:
                     vocList.append(ele)
+    word2idx={}
+    idx2word={}
+    for i, ele in enumerate(vocList):
+        word2idx[ele]=i
+        idx2word[i] =ele
+    return word2idx, idx2word
+
+def buildVocA2d(concaList):
+    vocList =[]
+    for capList in concaList:
+        for ele in capList:
+            if ele not in vocList:
+                vocList.append(ele)
     word2idx={}
     idx2word={}
     for i, ele in enumerate(vocList):
@@ -55,14 +74,54 @@ if __name__ == '__main__':
         word2idx, idx2word= buildVoc(concaList)
         model_word2vec = KeyedVectors.load_word2vec_format(opt.dictPath, binary=True) 
         matrix_word2vec = []
-        for word in word2idx.keys():
+        pdb.set_trace()
+        igNoreList =  list()
+        for i, word in enumerate(word2idx.keys()):
+            print(i, word)
             try:
                 matrix_word2vec.append(model_word2vec[word])
             except:
-                KeyError
+                pdb.set_trace()
+                igNoreList.append(word)
+                #matrix_word2vec.append(np.zeros((300), dtype=np.float32))
+                matrix_word2vec.append(np.random.rand((300), dtype=np.float32))
+                print('%s is not the vocaburary'% word)
         matrix_word2vec = np.asarray(matrix_word2vec).astype(np.float32)
         pdb.set_trace()
-        outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec}
+        outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec, 'out_voca': igNoreList}
         pickledump(opt.dictOutPath+'_'+opt.setName+'.pd', outDict) 
         print('Finish constructing dictionary for dataset: %s\n' %(opt.setName))
         print('Done!')
+
+    elif opt.setName=='a2d':
+        print('begin parsing dataset: %s\n' %(opt.setName))
+        outAnnName = opt.setOutPath+'_'+opt.setName+'.pd'
+        if not os.path.isfile(outAnnName):
+            a2dInfoRaw = a2dSetParser(opt.annFn, opt.annFd, opt.annIgListFn, opt.annOriFn)
+            pickledump(outAnnName, a2dInfoRaw)
+        else:
+            a2dInfoRaw = pickleload(outAnnName) 
+        print('finish parsing dataset: %s\n' %(opt.setName))
+       
+        print('begin constructing dictionary for dataset: %s\n' %(opt.setName))
+        word2idx, idx2word= buildVocA2d(a2dInfoRaw['cap'])
+        pdb.set_trace()
+        model_word2vec = KeyedVectors.load_word2vec_format(opt.dictPath, binary=True) 
+        matrix_word2vec = []
+        igNoreList =  list()
+        for i, word in enumerate(word2idx.keys()):
+            print(i, word)
+            try:
+                matrix_word2vec.append(model_word2vec[word])
+            except:
+                pdb.set_trace()
+                igNoreList.append(word)
+                #matrix_word2vec.append(np.zeros((300), dtype=np.float32))
+                randArray=np.random.rand((300)).astype('float32')
+                matrix_word2vec.append(randArray)
+                print('%s is not the vocaburary'% word)
+        matrix_word2vec = np.asarray(matrix_word2vec).astype(np.float32)
+        pdb.set_trace()
+        outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec, 'out_voca': igNoreList}
+        pickledump(opt.dictOutPath+'_'+opt.setName+'.pd', outDict) 
+        print('Finish constructing dictionary for dataset: %s\n' %(opt.setName))

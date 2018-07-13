@@ -2,8 +2,19 @@ import os
 import sys
 sys.path.append('../')
 sys.path.append('../util')
-from util.mytoolbox import get_specific_file_list_from_fd, textread, split_carefully, parse_mul_num_lines, pickleload
+from util.mytoolbox import get_specific_file_list_from_fd, textread, split_carefully, parse_mul_num_lines, pickleload, pickledump
 import pdb
+import h5py
+import csv
+
+def build_idx_from_list(vdList):
+    vdListU = list(set(vdList))
+    vd2idx = {}
+    idx2vd = {}
+    for i, ele in enumerate(vdList):
+        vd2idx[ele] = i
+        idx2vd[i] =  ele
+    return vd2idx, idx2vd
 
 def get_word_list(full_name_list):
     capList =[]
@@ -11,13 +22,52 @@ def get_word_list(full_name_list):
         lines = textread(filePath)
         subCapList=[]
         for line in lines:
-            wordList=split_carefully(line, ' ')
-            subCapList.append(wordList)
+            wordList=line.split(line, ' ')
+            subCapList.append(wordList.lower())
         capList.append(subCapList)
     return capList
 
-# parse OTB 99
+def fix_otb_frm_bbxList(annFn, outFn):
+    annDict = pickleload(annFn)
+   
+    isTrainSet = True
+    if isTrainSet:
+        bbxListDict=annDict['train_bbx_list']
+        vidList = annDict['trainName']
+        frmListDict=annDict['trainImg'] 
+    else:
+        bbxListDict=annDict['test_bbx_list']
+        vidList = annDict['testName']
+        frmListDict=annDict['testImg']
 
+    for i, vidName in enumerate(vidList):
+        frmList = frmListDict[i]
+        bbxList = bbxListDict[i]
+        frmList.sort()
+        if(vidName=='David'):
+            annDict['trainImg'][i] = frmList[299:]
+
+    isTrainSet = False
+    if isTrainSet:
+        bbxListDict=annDict['train_bbx_list']
+        vidList = annDict['trainName']
+        frmListDict=annDict['trainImg'] 
+    else:
+        bbxListDict=annDict['test_bbx_list']
+        vidList = annDict['testName']
+        frmListDict=annDict['testImg']
+
+    for i, vidName in enumerate(vidList):
+        frmList = frmListDict[i]
+        bbxList = bbxListDict[i]
+        frmList.sort()
+        if(vidName=='David'):
+            annDict['testImg'][i] = frmList[299:]
+
+    pickledump(outFn, annDict)
+    return annDict
+
+# parse OTB 99
 def get_otb_data(inFd):
     test_text_fd = inFd + '/OTB_query_test'     
     train_text_fd = inFd + '/OTB_query_train'     
@@ -79,21 +129,82 @@ def otbPCK2List(pckFn):
     
     return imgList
 
-class  otbParser(object):
-    def __init__(self, inFd, annoFile, dictFile,  rpFile):
-        test_text_fd = inFd + '/OTB_query_test'     
-        train_text_fd = inFd + '/OTB_query_train'     
-        video_fd = inFd + '/OTB_video'
-        
-        self.data = pickleload(annoFile)
-        self.dict = pickleload(dictFile)
-        self.data['qtsFd'] = inFd + '/OTB_query_test'     
-        self.data['qtrFd'] = inFd + '/OTB_query_train'     
-        self.data['vFd'] = inFd + '/OTB_video'
-        
+def a2dSetParser(annFn, annFd, annIgListFn, annFnOri):
+    fLineList  = textread(annFn)
+    videoList = list()
+    capList = list()
+    insList = list()
+    bbxList = list()
+    frmNameList  = list()
+    splitDict = {}
+
+    with open(annFnOri, 'rb') as csvFile:
+        lines = csv.reader(csvFile)
+        for line in lines:
+            eleSegs = split_carefully(line, ',')
+            splitDict[eleSegs[0][0]]=int(eleSegs[0][-1])
+
+    for i, line in enumerate(fLineList):
+        if(i<=0):
+            continue
+        splitSegs= split_carefully(line, ',')
+        annFdSub = annFd + '/' + splitSegs[0]
+        annNameList = get_specific_file_list_from_fd(annFdSub, '.h5') 
+        tmpFrmList = list()
+        tmpBbxList = list()
+        #pdb.set_trace()
+        insIdx = int(splitSegs[1])
+        print(splitSegs[2])
+        print('%s %d %d\n' %(splitSegs[0], i, insIdx))
+        for ii, annName  in enumerate(annNameList):
+            annSubFullPath = annFdSub + '/' +  annName +'.h5'
+            annIns = h5py.File(annSubFullPath)
+            tmpInsList = list(annIns['instance'][:])
+            if(insIdx in tmpInsList):
+                tmpFrmList.append(annName)
+                bxIdx = tmpInsList.index(insIdx)
+                tmpBbxList.append(annIns['reBBox'][:, bxIdx])
+        frmNameList.append(tmpFrmList)
+        bbxList.append(tmpBbxList)
+        videoList.append(splitSegs[0])
+        insList.append(int(splitSegs[1]))
+        capSegs = splitSegs[2].lower().split(' ')
+        capList.append(capSegs)
+
+    vd2idx, idx2vd = build_idx_from_list(videoList) 
+    igNameList =textread(annIgListFn)
+    
+    a2d_info_raw= {'cap': capList, 'vd': videoList, 'bbxList': bbxList, 'frmList': frmNameList, 'insList' :  insList, 'igList': igNameList, 'splitDict': splitDict, 'vd2idx': vd2idx, 'idx2vd': idx2vd}
+    return a2d_info_raw
+
+    #data = h5py.file() 
+def a2dPCK2List(pckFn): 
+    a2dDict = pickleload(pckFn)
+    imgList = list()
+    testCapList = a2dDict['cap']
+    for i, cap in enumerate(testCapList):
+        vdName = a2dDict['vd'][i]
+        frmList = a2dDict['frmList'][i]
+        for j, imName in enumerate(frmList):
+            imNameFull = vdName+'/'+imName+'.png'
+            imgList.append(imNameFull)
+    imgList= list(set(imgList)) 
+    return imgList
+
+
 if __name__=='__main__':
-    otbPKFile ='../data/annForDb_otb.pd'
-    imList = otbPCK2List(otbPKFile)
-    print(imList[:10])
-    print(imList[10000])
-    print(len(imList))
+    pckFn = '../data/annoted_a2d.pd'
+    imgList = a2dPCK2List(pckFn)
+    print('finish')
+    #annFd = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_annotation_with_instances' 
+    #annFn = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_annotation.txt' 
+    #annIgListFn = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_missed_videos.txt'
+    #annOriFn = '/disk2/zfchen/data/A2D/Release/videoset.csv' 
+    #a2dSetParser(annFn, annFd, annIgListFn, annOriFn)
+    #otbPKFile ='../data/annForDb_otb.pd'
+    #otbPKFileV2 ='../data/annForDb_otbV2.pd'
+    #otbNew= fix_otb_frm_bbxList(otbPKFile, otbPKFileV2)
+    #imList = otbPCK2List(otbPKFile)
+    #print(imList[:10])
+    #print(imList[10000])
+    #print(len(imList))
