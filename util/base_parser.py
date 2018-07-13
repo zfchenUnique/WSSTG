@@ -18,7 +18,7 @@ class BaseParser(argparse.ArgumentParser):
                           action='store_false',
                           default=True)
         self.add_argument('--alpha', default=0.001, type=float)
-        self.add_argument('--lr', default=0.01, type=float)
+        self.add_argument('--lr', default=0.001, type=float)
         self.add_argument('--momentum', default=0.9, type=float)
 
     def parse_args(self, *arg_list, **arg_dict):
