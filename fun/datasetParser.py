@@ -2,7 +2,7 @@ import os
 import sys
 sys.path.append('../')
 sys.path.append('../util')
-from util.mytoolbox import get_specific_file_list_from_fd, textread, split_carefully, parse_mul_num_lines, pickleload, pickledump
+from util.mytoolbox import get_specific_file_list_from_fd, textread, split_carefully, parse_mul_num_lines, pickleload, pickledump, get_list_dir
 import pdb
 import h5py
 import csv
@@ -191,11 +191,56 @@ def a2dPCK2List(pckFn):
     imgList= list(set(imgList)) 
     return imgList
 
+def extAllFrm(annFn, fdPre):
+    annDict = pickleload(annFn)
+    videoListU = list(set(annDict['vd']))
+    frmFullList = list()
+    for vdName in videoListU:
+        subPre = fdPre + '/' + vdName
+        frmNameList = get_specific_file_list_from_fd(subPre, '.png') 
+        for frm in frmNameList:
+            frmFullList.append(vdName+'/'+frm+'.png')
+    return frmFullList
+
+def extAllFrmFn(videoList, fdPre):
+    frmvDict = list()
+    for vdName in videoList:
+        subPre = fdPre + '/' + vdName
+        frmNameList = get_specific_file_list_from_fd(subPre, '.png')
+        frmNameList.sort()
+        frmvDict.append(frmNameList)  
+    #pdb.set_trace()
+    return frmvDict
+
+def getFrmFn(fdPre, extFn='.jpg'):
+    frmListFull = list()
+    sub_fd_list = get_list_dir(fdPre) 
+    for i, vdName in enumerate(sub_fd_list):
+        frmList = get_specific_file_list_from_fd(vdName, extFn, nameOnly=False)
+        frmListFull +=frmList
+    return frmListFull
+
+
+
 
 if __name__=='__main__':
-    pckFn = '../data/annoted_a2d.pd'
-    imgList = a2dPCK2List(pckFn)
-    print('finish')
+
+    fdListFn = '/data1/zfchen/data/actNet/actNetJpgs/'
+    #frmList = getFrmFn(fdListFn)
+    #pdb.set_trace()
+
+    #pckFn = '../data/annoted_a2d.pd'
+    #imPre ='/data1/zfchen/data/A2D/Release/pngs320H'
+    #dataAnn = pickleload(pckFn)
+    #frmFullList = extAllFrm(pckFn, imPre)
+    #pdb.set_trace()
+    #dataAnn['frmListGt'] = dataAnn['frmList']
+    #dataAnn['frmList'] = frmFullList
+    #pickledump('../data/annoted_a2dV2.pd', dataAnn)
+    #pdb.set_trace()
+    #print('finish')
+    #imgList = a2dPCK2List(pckFn)
+    #print('finish')
     #annFd = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_annotation_with_instances' 
     #annFn = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_annotation.txt' 
     #annIgListFn = '/disk2/zfchen/data/A2D/Release/sentenceAnno/a2d_missed_videos.txt'

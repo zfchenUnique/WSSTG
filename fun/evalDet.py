@@ -11,6 +11,7 @@ import pdb
 import ipdb
 import copy
 import torch
+from fun.datasetLoader import *
 
 def computeIoU(box1, box2):
   # each box is of [x1, y1, w, h]
@@ -95,7 +96,7 @@ def vis_detections(im, dets, thresh=0.5, topK=20, color=0):
     return im
 
 
-def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, capLbl, annDict=None):
+def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, capLbl, annDict=None, fdPre = '../data/A2DPrpGraphRankTest' ):
     resultList= list()
     bSize = len(lblList)
     prpListOri= prpList[0][0]
@@ -129,8 +130,10 @@ def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, ca
             if annDict is not None:
                 #imFullPath  = annDict['vFd'] + '/' + vdName +'/img/' \
                 # annDict['trainImg'][lbl][fId] +'.jpg'
-                imFullPath  = '/disk2/zfchen/data/A2D/Release/pngs320H/'  \
-                        + vdName +'/'+ annDict['frmList'][lbl][fId] +'.png'
+                #imFullPath  = '/disk2/zfchen/data/A2D/Release/pngs320H/'  \
+                imId = frmList[idx][fId]
+                imFullPath  = '/data1/zfchen/data/A2D/Release/pngs320H/'  \
+                        + vdName +'/'+ annDict['frmList'][lbl][imId] +'.png'
                 img = cv2.imread(imFullPath)
                 img2 = copy.deepcopy(img)
                 imSize =  np.array(get_image_size(imFullPath))
@@ -153,10 +156,84 @@ def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, ca
                 gtArr = np.array(bbxGtIJ)
                 gtArr = np.expand_dims(gtArr, axis=0)
                 im_show2 = vis_detections(img2, gtArr, thresh=-1, topK=1, color=1)
+                im_show2= putCapOnImage(im_show2, annDict['cap'][lbl])
+
+                imNameRaw= os.path.basename(imFullPath).split('.')[0]
+                makedirs_if_missing(fdPre)
+                detName = fdPre + '/'+ vdName +'_' + imNameRaw +'_'+str(imId)+'_det.jpg'
+                gtName = fdPre + '/'+ vdName +'_'+ imNameRaw +'_'+str(imId)+'_gt.jpg'
+
+                cv2.imwrite(gtName, im_show2)
+                cv2.imwrite(detName, im_show)
+
+        evalAccObj = evalDetAcc(gtBbxList[idx], IoU=0.5, topK=topK)
+        acc = evalAccObj.evalList(prpListSortMf) 
+        print('accuracy for %s: %3f' %(vdName, acc))
+        resultList.append((vdName, acc, frmList[idx]))
+    return resultList
+
+def evalAccGroundR(rpSS, logMat, lblList, prpList, gtBbxList, vidNameList, frmList, capLbl, annDict=None):
+    resultList= list()
+    bSize = len(lblList)
+    prpListOri= prpList[0][0]
+    kPrp = len(prpListOri)
+    frmNum = len(frmList[0])
+    rpSS = rpSS.view(-1, kPrp)
+    topK= 1
+    stIdx = 0
+    
+    for idx, lbl in enumerate(capLbl):
+        vdName = vidNameList[lbl]
+        endIdx = stIdx +len(frmList[idx])
+        simMM = rpSS[stIdx:endIdx, :]
+        stIdx = endIdx
+        # evaluate each frames
+        #pdb.set_trace()                
+        simMMReshape = simMM.view(-1, kPrp) 
+        sortSim, simIdx = torch.sort(simMMReshape, dim=1, descending=True)
+        simIdx = simIdx.data.cpu().numpy()
+        prpListSortMf = list() 
+        for fId in range(sortSim.shape[0]):
+            prpListOri= copy.deepcopy(prpList[idx][fId])
+            prpListSort = [prpListOri[simIdx[fId, i]] for i in range(kPrp)]
+            prpListSortMf.append(prpListSort)
+
+            # visualize sample results
+            if annDict is not None:
+                #imFullPath  = annDict['vFd'] + '/' + vdName +'/img/' \
+                # annDict['trainImg'][lbl][fId] +'.jpg'
+                #imFullPath  = '/disk2/zfchen/data/A2D/Release/pngs320H/'  \
+                imFullPath  = '/data1/zfchen/data/A2D/Release/pngs320H/'  \
+                        + vdName +'/'+ annDict['frmList'][lbl][fId] +'.png'
+                img = cv2.imread(imFullPath)
+                img2 = copy.deepcopy(img)
+                imSize =  np.array(get_image_size(imFullPath))
+                rpScore = sortSim[fId,:topK].cpu().data.numpy()
+                rpScore = np.expand_dims(rpScore, axis=1)
+                #rpM = np.array(prpListSortMf) 
+                rpM = np.array(prpListSort)[:topK, :] 
+                #print(rpM.shape)
+                #pdb.set_trace()
+                bbxInfo = np.concatenate((rpM, rpScore), 1) 
+                bbxInfo[:, 2]= bbxInfo[:, 2] + bbxInfo[:, 0]
+                bbxInfo[:, 3]= bbxInfo[:, 3] + bbxInfo[:, 1]
+                #print(bbxInfo)
+                im_show = vis_detections(img, bbxInfo, thresh=-1, topK=topK, color=0)
+                bbxGtIJ = copy.deepcopy(gtBbxList[idx][fId])
+                #bbxGtIJ = gtBbxList[idx][fId]
+                bbxGtIJ = list(bbxGtIJ)
+                bbxGtIJ[2] = bbxGtIJ[2]+bbxGtIJ[0]
+                bbxGtIJ[3] = bbxGtIJ[3]+bbxGtIJ[1]
+                bbxGtIJ.append(1)
+                gtArr = np.array(bbxGtIJ)
+                gtArr = np.expand_dims(gtArr, axis=0)
+                im_show2 = vis_detections(img2, gtArr, thresh=-1, topK=1, color=1)
         
                 imNameRaw= os.path.basename(imFullPath).split('.')[0]
-                detName = '../data/A2DPrp/'+ vdName +'_' + imNameRaw +'_det.jpg'
-                gtName = '../data/A2DPrp/'+ vdName +'_'+ imNameRaw +'_gt.jpg'
+                fdPre = '../data/A2DPrpGr'
+                makedirs_if_missing(fdPre)
+                detName = fdPre + '/'+ vdName +'_' + imNameRaw +'_'+str(fId)+'_det.jpg'
+                gtName = fdPre + '/'+ vdName +'_'+ imNameRaw +'_'+str(fId)+'_gt.jpg'
 
                 cv2.imwrite(gtName, im_show2)
                 cv2.imwrite(detName, im_show)
@@ -168,7 +245,10 @@ def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, ca
     return resultList
 
 
-if __name__=='__main__':
+
+
+
+def testOTb():
     topK = 20 
     dbAnn = '../data/annForDb_otbV2.pd'
     dbSetFd = '/disk2/zfchen/data/OTB_sentences/OTB_videos'
@@ -243,9 +323,57 @@ if __name__=='__main__':
         acc = evalAccObj.evalList(rpListVd) 
         print('accuracy for vid: %3f' %(acc))
 
+def keepKeyFrmForTest(imFtrM,  prpList, frmList):
+    bSize = len(prpList)
+    frmSize = len(prpList[0])
+    prpSize = len(prpList[0][0])
+    frmIdx = (frmSize-1)/2
+    imFtrM = imFtrM[:, frmIdx, :, :]
+    imFtrM = imFtrM.contiguous()
 
+    prpListNew = list()
+    frmListNew = list()
+    #pdb.set_trace()
+    for i in range(bSize):
+        prpListNew.append([prpList[i][frmIdx]])
+        frmListNew.append([frmList[i][frmIdx]]) 
+    return imFtrM, prpListNew, frmListNew
 
+def drawGt():
+    annoFile = '../data/annoted_a2d.pd'
+    dictFile = '../data/dictForDb_a2d.pd'
+    #rpFd ='/disk2/zfchen/data/a2dRP'
+    rpFd ='/data1/zfchen/data/a2dRP'
+    vdFrmFd ='/data1/zfchen/data/A2D/Release/pngs320H'
+    dataset = a2dImDataloader(annoFile, dictFile, rpFd)
+    dataset.image_samper_set_up(rpNum=20, imNum=1, \
+        maxWordNum=20, trainFlag=True, videoWeakFlag=False, pngFd=vdFrmFd)
+    dataset.data['pngFd'] = vdFrmFd
+    
+    for i, icapSeg in enumerate(dataset.data['cap']):
+        vdName = dataset.data['vd'][i] 
+        subImFullPath = dataset.data['pngFd'] +'/' + vdName 
+        subFrmList = dataset.data['frmList'][i]
+        subBbxList = dataset.data['bbxList'][i]
+        if(dataset.data['splitDict'][vdName]==0):
+            continue
+        for j, frmName in enumerate(subFrmList):
+            bbxGtIJ = subBbxList[j]
+            imFullPath = subImFullPath + '/' + frmName +'.png'
+            img2 = cv2.imread(imFullPath)
+            bbxGtIJ = list(bbxGtIJ)
+            #bbxGtIJ[2] = bbxGtIJ[2]+bbxGtIJ[0]
+            #bbxGtIJ[3] = bbxGtIJ[3]+bbxGtIJ[1]
+            bbxGtIJ.append(1)
+            gtArr = np.array(bbxGtIJ)
+            gtArr = np.expand_dims(gtArr, axis=0)
+            im_show2 = vis_detections(img2, gtArr, thresh=-1, topK=1, color=1)
+            gtName = '../data/A2DPrpGt2/'+ vdName +'_'+ frmName +'_'+str(j)+'_gt.jpg'
+            cv2.imwrite(gtName, im_show2)
+    print('finish')
 
+if __name__=='__main__':
+    drawGt()
 
 
 

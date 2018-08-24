@@ -12,6 +12,8 @@ import pickle
 import sys
 import time
 import scipy.io
+import cv2
+import pdb
 
 def set_debugger():
     from IPython.core import ultratb
@@ -348,6 +350,15 @@ def split_carefully(text, splitter=',', delimiters=['"', "'"]):
 def full_listdir(dir_name):
     return [os.path.join(dir_name, i) for i in os.listdir(dir_name)]
 
+def get_list_dir(dir_name):
+    fileFdList = full_listdir(dir_name)
+    folder_list = list()
+    for item in fileFdList:
+        if os.path.isdir(item):
+            folder_list.append(item)
+    return folder_list
+
+
 class tictoc(object):
     def __init__(self, targ_list):
         self._targ_list = targ_list
@@ -419,4 +430,33 @@ def pck2mat(pckFn, outFn):
     scipy.io.savemat(outFn, data)
     print('finish  transformation')
 
+def putCapOnImage(imgVis, capList):
+    if isinstance(capList, list):
+        cap = ''
+        for ele in capList:
+            cap +=ele
+            cap +=' '
+    else:
+        cap = capList
+    cv2.putText(imgVis, cap, 
+            (10, 50),
+            cv2.FONT_HERSHEY_PLAIN,
+            2, (0, 0, 255),
+            2)
+    return imgVis
+
+def get_all_file_list(dir_name):
+    file_list=list()
+    for fileTmp in os.listdir(dir_name):
+        file_path = os.path.join(dir_name, fileTmp)
+        if os.path.isdir(file_path):
+            continue
+        file_list.append(file_path)
+    return file_list
+
+def resize_image_with_fixed_height(img, hSize =320):
+    h, w, c = img.shape
+    scl = hSize*1.0/h
+    imgResize = cv2.resize(img, None, None,  fx=scl, fy=scl)
+    return imgResize, scl,  h, w
 

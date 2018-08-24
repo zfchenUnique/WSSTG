@@ -14,9 +14,12 @@ def parseCSV(csvFn):
     return rowList
 
 if __name__=='__main__':
-    a2dAnnFn1 = '/disk2/zfchen/data/A2D/Release/videoset.csv'
-    a2dMP4Path = '/disk2/zfchen/data/A2D/Release/clips320H/'
-    a2dPNGPath = '/disk2/zfchen/data/A2D/Release/pngs320H/'
+    #a2dAnnFn1 = '/disk2/zfchen/data/A2D/Release/videoset.csv'
+    #a2dMP4Path = '/disk2/zfchen/data/A2D/Release/clips320H/'
+    #a2dPNGPath = '/disk2/zfchen/data/A2D/Release/pngs320H/'
+    a2dAnnFn1 = '/data1/zfchen/data/A2D/Release/videoset.csv'
+    a2dMP4Path = '/data1/zfchen/data/A2D/Release/clips320H/'
+    a2dPNGPath = '/data1/zfchen/data/A2D/Release/pngs320H/'
     annDict=parseCSV(a2dAnnFn1)
     for i, row in enumerate(annDict):
         vdName = row[0]
