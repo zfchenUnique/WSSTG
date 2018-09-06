@@ -83,8 +83,13 @@ def textdump(path, lines, need_asking=False):
         if 'n' == choosebyinput(['Y', 'n'], path + ' exists. Would you replace? [Y/n]'):
             return False
     f = open(path, 'w')
-    for i in lines:
-        f.write(i + '\n')
+    for index, i in enumerate(lines):
+        try:
+            f.write(i.encode("utf-8") + '\n')
+        except:
+            print(index)
+            pdb.set_trace()
+
     f.close()
 
 def pickleload(path):

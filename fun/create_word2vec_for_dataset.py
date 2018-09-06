@@ -10,7 +10,7 @@ from mytoolbox import pickledump, set_debugger
 from util.base_parser import BaseParser
 import pdb
 from actNetDatasetParser import *
-
+from vidDatasetParser import *
 
 set_debugger()
 
@@ -81,7 +81,6 @@ def build_word_vec(word_list, model_word2vec):
         try:
             matrix_word2vec.append(model_word2vec[word])
         except:
-            #pdb.set_trace()
             igNoreList.append(word)
             #matrix_word2vec.append(np.zeros((300), dtype=np.float32))
             randArray=np.random.rand((300)).astype('float32')
@@ -90,6 +89,7 @@ def build_word_vec(word_list, model_word2vec):
                 print('%s is not the vocaburary'% word)
             except:
                 print('fail to print the word!')
+            #pdb.set_trace()
     return matrix_word2vec, igNoreList
 
 if __name__ == '__main__':
@@ -159,7 +159,6 @@ if __name__ == '__main__':
         
     elif opt.setName=='actNet':
         print('begin parsing dataset: %s\n' %(opt.setName))
-        outAnnName = opt.setOutPath+'_'+opt.setName+'.pd'
         word_list = build_actNet_word_list()
         print(len(word_list))
         pdb.set_trace()
@@ -172,6 +171,23 @@ if __name__ == '__main__':
         outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec, 'out_voca': igNoreList}
         pickledump(opt.dictOutPath+'_'+opt.setName+'.pd', outDict) 
         print('Finish constructing dictionary for dataset: %s\n' %(opt.setName))
+
+    elif opt.setName=='vid':
+        print('begin parsing dataset: %s\n' %(opt.setName))
+        word_list = build_vid_word_list()
+        print(len(word_list))
+        word2idx, idx2word= buildVocActNet(word_list)
+        model_word2vec = KeyedVectors.load_word2vec_format(opt.dictPath, binary=True) 
+        matrix_word2vec, igNoreList = build_word_vec(word2idx.keys(), model_word2vec)
+        matrix_word2vec = np.asarray(matrix_word2vec).astype(np.float32)
+        pdb.set_trace()
+
+        outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec, 'out_voca': igNoreList}
+        pickledump(opt.dictOutPath+'_'+opt.setName+'.pd', outDict) 
+        print('Finish constructing dictionary for dataset: %s\n' %(opt.setName))
+
+
+
 
 
 

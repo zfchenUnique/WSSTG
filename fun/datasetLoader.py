@@ -15,6 +15,7 @@ from datasetParser import extAllFrmFn
 import pdb
 from netUtil import *
 from wsParamParser import parse_args
+from vidDataset import *
 
 class a2dImDataloader(data.Dataset):
     def __init__(self, annoFile, dictFile, rpFd):
@@ -273,14 +274,28 @@ def build_dataloader(opt):
         dataset.image_samper_set_up(rpNum=opt.k_prp, imNum=opt.k_img, \
                 maxWordNum=opt.maxWL,trainFlag=True, videoWeakFlag=opt.vwFlag, pngFd=vdFrmFd, \
                 conSecFlag=opt.conSecFlag, conFrmNum=opt.conFrmNum
-
                 )
+    if opt.dbSet=='vid':
+        ftrPath = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/vidPrp/Data/VID'
+        tubePath = '/data1/zfchen/data/ILSVRC/tubePrp'
+        dictFile = '../data/dictForDb_vid.pd'
+        out_cached_folder = '/data1/zfchen/data/vid/vidTubeCacheFtr'
+        ann_folder = '/data1/zfchen/data/ILSVRC'
+        prp_type = 'coco_30_2'
+        set_name = opt.set_name
+        dataset = vidDataloader(ann_folder, prp_type, set_name, dictFile, tubePath \
+                , ftrPath, out_cached_folder)
+        capNum = opt.capNum 
+        maxWordNum = opt.maxWordNum
+        rpNum = opt.rpNum
+        dataset.image_samper_set_up(rpNum= rpNum, capNum = capNum, \
+                maxWordNum= maxWordNum, usedBadWord=False)
     else:
         print('Not implemented for dataset %s\n' %(opt.dbSet))
         return
      
     data_loader = data.DataLoader(dataset,  opt.batchSize, \
-            num_workers=opt.num_workers, collate_fn=dis_collate, \
+            num_workers=opt.num_workers, collate_fn=dis_collate_vid, \
             shuffle=True, pin_memory=True)
     return data_loader, dataset
 

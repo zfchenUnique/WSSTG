@@ -1,6 +1,7 @@
 import sys
 sys.path.append('..')
 from util.base_parser import BaseParser 
+import pdb
 
 class wsParamParser(BaseParser):
     def __init__(self, *arg_list, **arg_dict):
@@ -11,17 +12,14 @@ class wsParamParser(BaseParser):
         self.add_argument('--n_pairs', default=50, type=int)
         self.add_argument('--initmodel', default=None)
         self.add_argument('--resume', default='')
-        self.add_argument('--batchSize', default=17, type=int)
+        self.add_argument('--batchSize', default=16, type=int)
         self.add_argument('--gpu', default=1, type=int)
         self.add_argument('--decay', default=0.001, type=float)
         self.add_argument('--optimizer', default='sgd', type=str)
         self.add_argument('--margin', default=1, type=float)
         self.add_argument('--test', action='store_true', default=False)
         self.add_argument('--dbSet', default='otb', type=str)
-        self.add_argument('--num_workers', default=0, type=int)
-        self.add_argument('--k_img', default=1, type=int)
-        self.add_argument('--k_prp', default=20, type=int)
-        self.add_argument('--maxWL', default=15, type=int)
+        self.add_argument('--num_workers', default=8, type=int)
         self.add_argument('--visIter', default=5, type=int)
         self.add_argument('--evalIter', default=10, type=int)
         self.add_argument('--epSize', default=10000, type=int)
@@ -43,10 +41,20 @@ class wsParamParser(BaseParser):
         self.add_argument('--keepKeyFrameOnly', action='store_true', default=False)
         self.add_argument('--visRsFd', default='../data/visResult/rank_', type=str)
         self.add_argument('--logFdTx', default='../data/log/wsEmb', type=str)
-        self.add_argument('--set_name', default='train_val', type=str)
+        self.add_argument('--set_name', default='train', type=str)
         self.add_argument('--isParal', action='store_true', default=False)
+        self.add_argument('--capNum', default=1, type=int)
+        self.add_argument('--maxWordNum', default=20, type=int)
+        self.add_argument('--rpNum', default=30, type=int)
+        self.add_argument('--vis_dim', default=2048, type=int)
 
 def parse_args():
     parser = wsParamParser()
     args = parser.parse_args()
+    args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
+            +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
+            + '_' + str(args.wsMode)
+    args.outPre = args.outPre +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
+            +'_wl_'+str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
+             + '_' + str(args.wsMode)
     return args

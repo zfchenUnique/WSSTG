@@ -10,6 +10,7 @@ class lossEvaluator(nn.Module):
         self.biLossFlag = biLossFlag
         self.lossWFlag = lossWFlag
         self.lamda= lamda
+        self.keepKeyFrameOnly = keepKeyFrameOnly
 
     def forward(self, imFtr, disFtr, lblList):
         if not self.lossWFlag:
@@ -24,6 +25,12 @@ class lossEvaluator(nn.Module):
         if(len(lblList)==1):
             return torch.zeros(1).cuda()
         #pdb.set_trace()
+        if self.keepKeyFrameOnly:
+            bSize, frmSize, prpSize, ftrSize = imFtr.shape
+            #pdb.set_trace()
+            keyIdx = (frmSize-1)/2
+            imFtr = imFtr[:, keyIdx, :, :]
+            imFtr = imFtr.contiguous()
         imFtr = imFtr.view(-1, imFtr.shape[2])
         simMM = torch.mm(imFtr, disFtr.transpose(0, 1))
         simMMRe = simMM.view(bSize, -1, bSize)
@@ -103,6 +110,19 @@ class lossEvaluator(nn.Module):
                 loss +=lossBi/pairNum
         return loss
 
+class lossGroundR(nn.Module):
+    def __init__(self):
+        super(lossGroundR, self).__init__()
+        self.criterion = nn.CrossEntropyLoss()
+    def forward(self, logMat, wordLbl):
+        loss = 0
+        bSize = len(wordLbl)
+        for i in range(bSize):
+            wL = len(wordLbl[i])
+            tmpPredict = logMat[i, :wL, :]
+            loss += self.criterion(tmpPredict, torch.LongTensor(wordLbl[i]).cuda())
+        return loss
+
 def build_lossEval(opts):
-    if opts.wsMode == 'rankTube':
+    if opts.wsMode == 'rank':
         return lossEvaluator(opts.margin, opts.biLoss, opts.lossW, opts.lamda)
