@@ -26,44 +26,44 @@ if __name__=='__main__':
     writer = SummaryWriter(opt.logFdTx+time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
     #pdb.set_trace()
     for ep in range(opt.stEp, opt.epSize):
-        #if(ep % opt.saveEp==0 and ep<0):
-        if(ep % opt.saveEp==0):
-            checkName = opt.outPre+'_ep_'+str(ep)+'.pth'
-            save_check_point(model.state_dict(), file_name=checkName)
-            model.eval()
-            resultList = list()
-            vIdList = list()
-            opt.set_name = 'val'
-            dataLoader, datasetOri = build_dataloader(opt) 
-            for itr, inputData in enumerate(dataLoader):
-                tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
-                dataIdx = None
-                #pdb.set_trace()
-                b_size = tube_embedding.shape[0]
-                imDis = tube_embedding.cuda()
-                imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
-                wordEmb = cap_embedding.cuda()
-                wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
-                imDis.requires_grad=False
-                wordEmb.requires_grad=False
-                if opt.wsMode=='rankTube':
-                    imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
-                    imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
-                    txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
-                    resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), True)
+    #    if(ep % opt.saveEp==0 and ep>0):
+    #    #if(ep % opt.saveEp==0):
+    #        checkName = opt.outPre+'_ep_'+str(ep)+'.pth'
+    #        save_check_point(model.state_dict(), file_name=checkName)
+    #        model.eval()
+    #        resultList = list()
+    #        vIdList = list()
+    #        set_name_ori= opt.set_name
+    #        opt.set_name = 'val'
+    #        dataLoader, datasetOri = build_dataloader(opt) 
+    #        for itr, inputData in enumerate(dataLoader):
+    #            tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+    #            dataIdx = None
+    #            #pdb.set_trace()
+    #            b_size = tube_embedding.shape[0]
+    #            # B*P*T*D
+    #            imDis = tube_embedding.cuda()
+    #            imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
+    #            wordEmb = cap_embedding.cuda()
+    #            wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
+    #            imDis.requires_grad=False
+    #            wordEmb.requires_grad=False
+    #            if opt.wsMode=='rankTube':
+    #                imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
+    #                imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
+    #                txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
+    #                resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
 
-            accSum = 0
-            for ele in resultList:
-                index, recall_k= ele
-                accSum +=recall_k
-            logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
-            writer.add_scalar('Average accuracy', accSum/len(resultList), ep)
-            pdb.set_trace()
-            model.train()
-            opt.set_name = 'train'
-            dataLoader, datasetOri= build_dataloader(opt) 
-            checkName = opt.outPre+str(ep)+'.pth'
-            save_check_point(model.state_dict(), file_name=checkName)
+    #        accSum = 0
+    #        for ele in resultList:
+    #            index, recall_k= ele
+    #            accSum +=recall_k
+    #        logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
+    #        writer.add_scalar('Average accuracy', accSum/len(resultList), ep)
+    #        #pdb.set_trace()
+    #        model.train()
+    #        opt.set_name = set_name_ori
+    #        dataLoader, datasetOri= build_dataloader(opt) 
         
         for itr, inputData in enumerate(dataLoader):
             tBf = time.time() 
@@ -94,6 +94,48 @@ if __name__=='__main__':
                 logger('Ep: %d, Iter: %d, Time: %3f, loss: %3f\n' %(ep, itr, tAf-tBf, float(loss.data.cpu().numpy())))
                 tBf = tAf
                 writer.add_scalar('loss', loss.data.cpu()[0], ep*len(dataLoader)+itr)
-        dataLoader, datasetOri= build_dataloader(opt) 
-        checkName = opt.outPre+str(ep)+'.pth'
-        save_check_point(model.state_dict(), file_name=checkName)
+
+        ## evaluation within an epoch
+            if(ep % opt.saveEp==0 and itr %200==0 and itr>0):
+            #if(ep % opt.saveEp==0):
+                checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
+                save_check_point(model.state_dict(), file_name=checkName)
+                model.eval()
+                resultList = list()
+                vIdList = list()
+                set_name_ori= opt.set_name
+                opt.set_name = 'val'
+                dataLoaderEval, datasetOri = build_dataloader(opt) 
+                for itr_eval, inputData in enumerate(dataLoaderEval):
+                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+                    dataIdx = None
+                    #pdb.set_trace()
+                    b_size = tube_embedding.shape[0]
+                    # B*P*T*D
+                    imDis = tube_embedding.cuda()
+                    imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
+                    wordEmb = cap_embedding.cuda()
+                    wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
+                    imDis.requires_grad=False
+                    wordEmb.requires_grad=False
+                    if opt.wsMode=='rankTube':
+                        imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
+                        imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
+                        txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
+                        resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
+
+                accSum = 0
+                for ele in resultList:
+                    index, recall_k= ele
+                    accSum +=recall_k
+                logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
+                writer.add_scalar('Average accuracy', accSum/len(resultList), ep*len(dataLoaderEval)+ itr)
+                #pdb.set_trace()
+                model.train()
+                opt.set_name = set_name_ori
+                #dataLoader, datasetOri= build_dataloader(opt) 
+
+
+        #dataLoader, datasetOri= build_dataloader(opt) 
+        #checkName = opt.outPre+str(ep)+'.pth'
+        #save_check_point(model.state_dict(), file_name=checkName)

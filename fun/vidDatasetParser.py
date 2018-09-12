@@ -506,8 +506,6 @@ def statistic_im_prp():
         recall_list.append(recall_k)
     show_distribute_over_categories(recall_list, ann_list, thre_list)
 
-
-
 def vid_caption_processing():
     cap_folder = '/data1/zfchen/data/ILSVRC/capResults'
     train_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_valid_list.txt'  
@@ -536,7 +534,6 @@ def vid_caption_processing():
             val_ins_ann_list.append('%d,%s' %(ins_id, caption))
     textdump(train_ann_list_fn, train_ins_ann_list)
     textdump(val_ann_list_fn, val_ins_ann_list)
-
 
 def vid_valid_caption_preprocessing():
     cap_folder = '/data1/zfchen/data/ILSVRC/capResults'

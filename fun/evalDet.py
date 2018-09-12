@@ -12,7 +12,8 @@ import ipdb
 import copy
 import torch
 from fun.datasetLoader import *
-from vidDatasetParser import evaluate_tube_recall_vid
+from vidDatasetParser import evaluate_tube_recall_vid, resize_tube_bbx 
+from netUtil import *
 
 def computeIoU(box1, box2):
   # each box is of [x1, y1, w, h]
@@ -116,38 +117,40 @@ def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=Fals
         sortSim, simIdx = torch.sort(simMMReshape, dim=1, descending=True)
         simIdx = simIdx.data.cpu().numpy().squeeze()
         sort_sim_np = sortSim.data.cpu().numpy().squeeze()
-        prpListSortMf = list() 
-        #pdb.set_trace()
 
         tube_Info_sub = tubeInfo[idx]
         tube_info_sub_prp, frm_info_list = tube_Info_sub
         tube_info_sub_prp_bbx, tube_info_sub_prp_score = tube_info_sub_prp
         prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]], sort_sim_np[i] ]for i in range(topK)]
-        results = [prpListSort, frm_info_list]
+        shot_proposals = [prpListSort, frm_info_list]
         for ii, thre in enumerate(thre_list):
-            recall_tmp= evaluate_tube_recall_vid(results, vid_parser, lbl, thre, topKOri=topK)
+            recall_tmp= evaluate_tube_recall_vid(shot_proposals, vid_parser, lbl, thre, topKOri=topK)
         resultList.append((lbl, recall_tmp[-1]))
         print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
         
         # visualize sample results
         if visFlag:
+            vd_name, ins_id_str = vid_parser.get_shot_info_from_index(lbl)
             frmImNameList = [os.path.join(vid_parser.jpg_folder, vd_name, frame_name + '.JPEG') for frame_name in frm_info_list]
             frmImList = list()
             for fId, imPath  in enumerate(frmImNameList):
                 img = cv2.imread(imPath)
                 frmImList.append(img)
             vis_frame_num = 30
-            visIner = int(len(frmImList) /vis_frame_num)
-            vd_name, ins_id_str = vid_parser.get_shot_info_from_index(lbl)
-    #pdb.set_trace() 
-            for ii in range(len(results[0])):
+            visIner =max(int(len(frmImList) /vis_frame_num), 1)
+            if(recall_tmp[-1]<=0.5):
+                continue
+            
+            for ii in range(len(prpListSort)):
                 print('visualizing tube %d\n'%(ii))
-                tube = results[0][ii]
+                #pdb.set_trace() 
+                tube = prpListSort[ii][0]
                 frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
                 tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
                 tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
                 vd_name_raw = vd_name.split('/')[-1]
-                visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, visRsFd+'/'+vd_name_raw+ '_'+str(prp_num) + str(ii)+'.gif')
+                makedirs_if_missing(visRsFd)
+                visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, visRsFd+'/'+vd_name_raw+ '_' + str(ii)+'.gif')
 
     return resultList
 

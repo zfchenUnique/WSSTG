@@ -1,7 +1,6 @@
 import sys
 sys.path.append('..')
 from util.base_parser import BaseParser 
-import pdb
 
 class wsParamParser(BaseParser):
     def __init__(self, *arg_list, **arg_dict):
@@ -47,14 +46,24 @@ class wsParamParser(BaseParser):
         self.add_argument('--maxWordNum', default=20, type=int)
         self.add_argument('--rpNum', default=30, type=int)
         self.add_argument('--vis_dim', default=2048, type=int)
+        self.add_argument('--vis_type', default='lstm', type=str)
+        self.add_argument('--pos_type', default='aiayn', type=str)
+        self.add_argument('--pos_emb_dim', default=64, type=int)
+        self.add_argument('--half_size', action='store_true', default=False)
 
 def parse_args():
     parser = wsParamParser()
     args = parser.parse_args()
+    half_size =''
+    if args.half_size:
+        half_size = 'half'
     args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
-            + '_' + str(args.wsMode)
+            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) + '_' + half_size
     args.outPre = args.outPre +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_'+str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
-             + '_' + str(args.wsMode)
+             + '_' + str(args.wsMode) + str(args.vis_type) + '_'+ str(args.pos_type)+ '_'+ half_size  +'/'
+    args.logFdTx = args.logFdTx +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
+            +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
+            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) +'_' +half_size
     return args

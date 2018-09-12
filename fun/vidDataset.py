@@ -2,6 +2,7 @@ import os
 import sys
 sys.path.append('..')
 sys.path.append('../annotations')
+sys.path.append('../../annotations')
 import torch.utils.data as data
 import cv2
 import numpy as np
@@ -20,8 +21,9 @@ from ptd_api import *
 from vidDatasetParser import *
 from multiprocessing import Process, Pipe, cpu_count, Queue
 from vidDatasetParser import vidInfoParser
+from multiGraphAttention import extract_position_embedding 
 
-#set_debugger()
+set_debugger()
 
 class vidDataloader(data.Dataset):
     def __init__(self, ann_folder, prp_type, set_name, dictFile, tubePath, ftrPath, out_cached_folder):
@@ -39,11 +41,14 @@ class vidDataloader(data.Dataset):
         self.use_key_index = self.vid_parser.tube_cap_dict.keys()
         self.use_key_index.sort()
 
-    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False):
+    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
         self.capNum = capNum
+        self.pos_emb_dim = pos_emb_dim
+        self.pos_type = pos_type
+        self.half_size = half_size
 
     def __len__(self):
         return len(self.vid_parser.tube_cap_dict)
@@ -96,11 +101,25 @@ class vidDataloader(data.Dataset):
         tmp_cache_tube_feature_path = os.path.join(out_cached_folder, \
                     set_name, self.prp_type, str(index) + '.pk')
         if os.path.isfile(tmp_cache_tube_feature_path):
-            tmp_tube_ftr_info = pickleload(tmp_cache_tube_feature_path)
-            tube_embedding, tubeInfo, tube_to_prp_idx = tmp_tube_ftr_info
-            if((tube_to_prp_idx[0])>maxTubelegth):
-                return tube_embedding, tubeInfo, tube_to_prp_idx
-       
+            tmp_tube_ftr_info = None
+            try:
+                tmp_tube_ftr_info = pickleload(tmp_cache_tube_feature_path)
+            except:
+                print('--------------------------------------------------')
+                print(tmp_cache_tube_feature_path)
+                print('--------------------------------------------------')
+            if tmp_tube_ftr_info is not None: 
+                tube_embedding, tubeInfo, tube_to_prp_idx = tmp_tube_ftr_info
+
+                #if((tube_to_prp_idx[0])>maxTubelegth):
+                if tube_embedding.shape[0]>=self.rpNum:
+                    return tube_embedding[:self.rpNum], tubeInfo, tube_to_prp_idx
+                else:
+                    tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+
+        # cache data for saving IO time
+        cache_data_dict ={}
+
         for tubeId, tube in enumerate(tube_list[0]):
             if tubeId>= self.rpNum:
                 continue
@@ -108,9 +127,14 @@ class vidDataloader(data.Dataset):
             # find proposals
             for frmId, bbox in enumerate(tube):
                 frmName = frame_list[frmId] 
-                img_prp_ftr_info_path = os.path.join(self.ftrPath, self.set_name, vd_name, frmName+ '.pd')
-                img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
-                tmp_bbx = img_prp_ftr_info['rois'][:prp_range_num] # to be modified
+                if frmName in cache_data_dict.keys():
+                    img_prp_ftr_info = cache_data_dict[frmName]
+                else:
+                    img_prp_ftr_info_path = os.path.join(self.ftrPath, self.set_name, vd_name, frmName+ '.pd')
+                    img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+                    cache_data_dict[frmName] = img_prp_ftr_info
+                
+                tmp_bbx = copy.deepcopy(img_prp_ftr_info['rois'][:prp_range_num]) # to be modified
                 tmp_info = img_prp_ftr_info['imFo'].squeeze()
                 tmp_bbx[:, 0] = tmp_bbx[:, 0]/tmp_info[1]
                 tmp_bbx[:, 2] = tmp_bbx[:, 2]/tmp_info[1]
@@ -123,7 +147,10 @@ class vidDataloader(data.Dataset):
                         tube_prp_map.append(prpId)
                         break
                 #assert("fail to find proposals")
+            if (len(tube_prp_map)!=len(tube)):
+                pdb.set_trace()
             assert(len(tube_prp_map)==len(tube))
+           
             tube_to_prp_idx.append(tube_prp_map)
             
             # extract features
@@ -131,14 +158,18 @@ class vidDataloader(data.Dataset):
             for segId in range(maxTubelegth):
                 start_id = segId*seg_length
                 end_id = (segId+1)*seg_length
-                if end_id>frmNum:
+                if end_id>frmNum and frmNum<maxTubelegth:
                     break
                 end_id = min((segId+1)*(seg_length), frmNum)
                 tmp_ftr = np.zeros((1, self.tube_ftr_dim), dtype=np.float32)
                 for frmId in range(start_id, end_id):
                     frm_name = frame_list[frmId]
-                    img_prp_ftr_info_path = os.path.join(self.ftrPath, self.set_name, vd_name, frm_name+ '.pd')
-                    img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+                    if frm_name in cache_data_dict.keys():
+                        img_prp_ftr_info = cache_data_dict[frm_name]
+                    else:
+                        img_prp_ftr_info_path = os.path.join(self.ftrPath, self.set_name, vd_name, frm_name+ '.pd')
+                        img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+                        cache_data_dict[frm_name] = img_prp_ftr_info
                     tmp_ftr +=img_prp_ftr_info['roiFtr'][tube_prp_map[frmId]]
                 tmp_tube_embedding[segId, :] = tmp_ftr/(end_id-start_id)
             
@@ -148,7 +179,49 @@ class vidDataloader(data.Dataset):
             dir_name = os.path.dirname(tmp_cache_tube_feature_path)
             makedirs_if_missing(dir_name)
             pickledump(tmp_cache_tube_feature_path, [tube_embedding, tubeInfo, tube_to_prp_idx])
+    
+        if self.vis_half_size:
+            tube_embedding = tube_embedding.view(self.rpNum, self.maxTubelegth/2, 2, self.tube_ftr_dim)
+            tube_embedding = np.mean(tube_embedding, axis=2)
+
         return tube_embedding, tubeInfo, tube_to_prp_idx
+
+    def get_tube_pos_embedding(self, tubeInfo, tube_length, feat_dim=64, feat_type='aiayn'):
+        tube_list, frame_list = tubeInfo
+        position_mat_raw = torch.zeros((1, self.rpNum, tube_length, 4)) 
+        if feat_type=='aiayn':
+            bSize = 1
+            prpSize = self.rpNum
+            kNN = tube_length
+            for tubeId, tube in enumerate(tube_list[0]):
+                if tubeId>=self.rpNum:
+                    break
+                tube_length_ori = len(tube)
+                tube_seg_length = max(int(tube_length_ori/tube_length), 1)
+                
+                for tube_seg_id in range(0, tube_length):
+                    tube_seg_id_st = tube_seg_id*tube_seg_length
+                    tube_seg_id_end = min((tube_seg_id+1)*tube_seg_length, tube_length_ori)
+                    if(tube_seg_id_st)>=tube_length_ori:
+                        position_mat_raw[0, tubeId, tube_seg_id, :] = position_mat_raw[0, tubeId, tube_seg_id-1, :]
+                        continue
+                    bbox_list = tube[tube_seg_id_st:tube_seg_id_end]
+                    box_np = np.concatenate(bbox_list, axis=0)
+                    box_tf = torch.FloatTensor(box_np).view(-1, 4)
+                    position_mat_raw[0, tubeId, tube_seg_id, :]= box_tf.mean(0)
+            #pdb.set_trace()
+            # transform bbx to format with (x_c, yc, w, h) 
+            position_mat_raw_v2 = copy.deepcopy(position_mat_raw)
+            position_mat_raw_v2[:, 0] = (position_mat_raw[:, 0] + position_mat_raw[:, 2])/2
+            position_mat_raw_v2[:, 1] = (position_mat_raw[:, 1] + position_mat_raw[:, 3])/2
+            position_mat_raw_v2[:, 2] = position_mat_raw[:, 2] - position_mat_raw[:, 0]
+            position_mat_raw_v2[:, 3] = position_mat_raw[:, 3] - position_mat_raw[:, 1]
+
+            pos_emb = extract_position_embedding(position_mat_raw_v2, feat_dim, wave_length=1000)
+            
+            return pos_emb.squeeze(0)
+        else:
+            raise  ValueError('%s is not implemented!' %(feat_type))
 
     def get_visual_item(self, indexOri):
         #pdb.set_trace()
@@ -162,7 +235,18 @@ class vidDataloader(data.Dataset):
         tBf = time.time() 
         # get visual tube embedding 
         tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding(index, self.maxTubelegth, self.out_cache_folder)
-        tAf2 = time.time() 
+        tAf2 = time.time()
+        tube_embedding = torch.FloatTensor(tube_embedding)
+        #print(self.pos_type)
+        if self.pos_type !='none':
+            tp1 = time.time() 
+            #pdb.set_trace()
+            tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
+                    feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
+            tp2 = time.time()
+        
+            tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+            #print('extract pos time %f\n' %(tp2-tp1))
         #print('index: %d, caption: %f, visual: %f\n'%(indexOri,  tBf-tAf, tAf2-tBf))
         vd_name, ins_in_vd = self.vid_parser.get_shot_info_from_index(index)
         return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name
@@ -179,7 +263,7 @@ def dis_collate_vid(batch):
     vd_name_list = list()
     max_length = 0
     for sample in batch:
-        ftr_tube_list.append(torch.FloatTensor(sample[0]))
+        ftr_tube_list.append(sample[0])
         ftr_cap_list.append(torch.FloatTensor(sample[1]))
         tube_info_list.append(sample[2])
         index_list.append(sample[3])
@@ -209,8 +293,12 @@ def build_dataloader(opt):
         capNum = opt.capNum 
         maxWordNum = opt.maxWordNum
         rpNum = opt.rpNum
+        pos_emb_dim = opt.pos_emb_dim
+        pos_type = opt.pos_type
+        #pdb.set_trace()
         dataset.image_samper_set_up(rpNum= rpNum, capNum = capNum, \
-                maxWordNum= maxWordNum, usedBadWord=False)
+                maxWordNum= maxWordNum, usedBadWord=False, \
+                pos_emb_dim=pos_emb_dim, pos_type=pos_type)
     else:
         print('Not implemented for dataset %s\n' %(opt.dbSet))
         return
@@ -224,8 +312,9 @@ if __name__=='__main__':
     opt = parse_args()
     opt.dbSet = 'vid'
     opt.set_name ='train'
-    opt.batchSize = 1
-    opt.num_workers = 8
+    opt.batchSize = 4
+    opt.num_workers = 0
+    opt.rpNum =30
     data_loader, dataset  = build_dataloader(opt)
     for index, input_data in enumerate(data_loader):
         print index

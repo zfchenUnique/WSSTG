@@ -41,7 +41,10 @@ class wsEmb(nn.Module):
 
     def forwardRank(self, imDis, wordEmb, capLengths):
         #pdb.set_trace()
-        assert len(imDis.size())==3
+        if self.vis_type =='fc':
+            imDis = imDis.mean(1)
+        else:
+            assert len(imDis.size())==3
         assert len(wordEmb.size())==3
         imEnDis = self.imEncoder(imDis)
         wordEnDis = self.wordEncoder(wordEmb, capLengths)
@@ -101,15 +104,23 @@ def build_txt_encoder(opts):
     return txt_encoder 
 
 class visSeqEncoder(nn.Module):
-    def __init__(self, embedDim, hidden_dim):
+    def __init__(self, embedDim, hidden_dim, seq_Type='lstm'):
         super(visSeqEncoder, self).__init__()
         self.hidden_dim = hidden_dim
-        self.lstm =nn.LSTM(embedDim, hidden_dim, batch_first=True)
+        self.seq_type = seq_Type
+        if seq_Type =='lstm':
+            self.lstm =nn.LSTM(embedDim, hidden_dim, batch_first=True)
+        elif seq_Type =='gru':
+            self.lstm =nn.GRU(embedDim, hidden_dim, batch_first=True)
+
         self.hidden = self.init_hidden()
         
     def init_hidden(self, batchSize=10):
-        self.hidden=(torch.zeros(1, batchSize, self.hidden_dim).cuda(),
-                torch.zeros(1, batchSize, self.hidden_dim).cuda())
+        if self.seq_type=='lstm':
+            self.hidden=(torch.zeros(1, batchSize, self.hidden_dim).cuda(),
+                    torch.zeros(1, batchSize, self.hidden_dim).cuda())
+        elif self.seq_type=='gru':
+            self.hidden=torch.zeros(1, batchSize, self.hidden_dim).cuda()
 
     def forward(self, wordMatrix, wordLeg=None):
         #pdb.set_trace()
@@ -126,17 +137,34 @@ class visSeqEncoder(nn.Module):
             txtEmbMat = torch.stack(txtEMb)
             return txtEmbMat
 
+def build_vis_fc_encoder(opts):
+    inputDim = opts.vis_dim 
+    visNet = torch.nn.Sequential(
+            torch.nn.Linear(inputDim, inputDim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(p=0.5),
+            torch.nn.Linear(inputDim, opts.dim_ftr),
+            )
+    return visNet
+
+
 def build_vis_seq_encoder(opts):
     embedDim = opts.vis_dim
-    vis_seq_encoder =  visSeqEncoder(embedDim, opts.dim_ftr)
-    return vis_seq_encoder
+    if opts.vis_type == 'lstm' or opts.vis_type=='gru':
+        vis_seq_encoder =  visSeqEncoder(embedDim, opts.dim_ftr, opts.vis_type)
+        return vis_seq_encoder
+    elif opts.vis_type == 'fc':
+        vis_avg_encoder = build_vis_fc_encoder(opts)
+        return vis_avg_encoder
+
 
 def build_network(opts):
     if opts.wsMode =='rankTube': 
         imEncoder= build_vis_seq_encoder(opts)
         wordEncoder = build_txt_encoder(opts)
         wsEncoder = wsEmb(imEncoder, wordEncoder)
-    wsEncoder.wsMode = opts.wsMode   
+    wsEncoder.wsMode = opts.wsMode
+    wsEncoder.vis_type = opts.vis_type
     if opts.gpu:
         wsEncoder= wsEncoder.cuda()
     if opts.initmodel is not None:
@@ -146,9 +174,4 @@ def build_network(opts):
         wsEncoder = nn.DataParallel(wsEncoder).cuda()
     
     return wsEncoder
-
-
-
-
-
 

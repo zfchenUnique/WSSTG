@@ -288,8 +288,14 @@ def build_dataloader(opt):
         capNum = opt.capNum 
         maxWordNum = opt.maxWordNum
         rpNum = opt.rpNum
+        pos_emb_dim = opt.pos_emb_dim
+        pos_type = opt.pos_type
+        #pdb.set_trace()
         dataset.image_samper_set_up(rpNum= rpNum, capNum = capNum, \
-                maxWordNum= maxWordNum, usedBadWord=False)
+                maxWordNum= maxWordNum, usedBadWord=False, \
+                pos_emb_dim=pos_emb_dim, pos_type=pos_type)
+        #print(dataset.pos_type)    
+    
     else:
         print('Not implemented for dataset %s\n' %(opt.dbSet))
         return
