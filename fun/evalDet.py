@@ -14,6 +14,8 @@ import torch
 from fun.datasetLoader import *
 from vidDatasetParser import evaluate_tube_recall_vid, resize_tube_bbx 
 from netUtil import *
+sys.path.append('../annotation')
+from script_test_annotation import evaluate_tube_recall
 
 def computeIoU(box1, box2):
   # each box is of [x1, y1, w, h]
@@ -97,12 +99,10 @@ def vis_detections(im, dets, thresh=0.5, topK=20, color=0):
     return im
 
 
-#def evalAcc(imFtr, txtFtr, lblList, prpList, gtBbxList, vidNameList, frmList, capLbl, annDict=None, fdPre = '../data/A2DPrpGraphRankTest' )
-def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=False):
+def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=False, topK = 1):
     resultList= list()
     bSize = len(indexOri)
     tube_Prp_num = imFtr.shape[1]
-    topK= 1
     stIdx = 0
     #thre_list = [0.2, 0.3, 0.4, 0.5]
     thre_list = [ 0.5]
@@ -115,21 +115,25 @@ def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=Fals
         #pdb.set_trace()                
         simMMReshape = simMM.view(-1, tube_Prp_num) 
         sortSim, simIdx = torch.sort(simMMReshape, dim=1, descending=True)
-        simIdx = simIdx.data.cpu().numpy().squeeze()
-        sort_sim_np = sortSim.data.cpu().numpy().squeeze()
+        simIdx = simIdx.data.cpu().numpy().squeeze(axis=0)
+        sort_sim_np = sortSim.data.cpu().numpy().squeeze(axis=0)
 
         tube_Info_sub = tubeInfo[idx]
         tube_info_sub_prp, frm_info_list = tube_Info_sub
         tube_info_sub_prp_bbx, tube_info_sub_prp_score = tube_info_sub_prp
-        prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]], sort_sim_np[i] ]for i in range(topK)]
+        #prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]], sort_sim_np[i] ]for i in range(topK)]
+        prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]] for i in range(topK)], [sort_sim_np[i] for i in range(topK)] ]
         shot_proposals = [prpListSort, frm_info_list]
         for ii, thre in enumerate(thre_list):
             recall_tmp= evaluate_tube_recall_vid(shot_proposals, vid_parser, lbl, thre, topKOri=topK)
         resultList.append((lbl, recall_tmp[-1]))
         print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
         
-        # visualize sample results
+        #pdb.set_trace()
         if visFlag:
+            # visualize sample results
+            if(recall_tmp[-1]<=0.5):
+                continue
             vd_name, ins_id_str = vid_parser.get_shot_info_from_index(lbl)
             frmImNameList = [os.path.join(vid_parser.jpg_folder, vd_name, frame_name + '.JPEG') for frame_name in frm_info_list]
             frmImList = list()
@@ -138,28 +142,223 @@ def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=Fals
                 frmImList.append(img)
             vis_frame_num = 30
             visIner =max(int(len(frmImList) /vis_frame_num), 1)
-            if(recall_tmp[-1]<=0.5):
-                continue
             
-            for ii in range(len(prpListSort)):
+            for ii in range(topK):
                 print('visualizing tube %d\n'%(ii))
                 #pdb.set_trace() 
-                tube = prpListSort[ii][0]
+                tube = prpListSort[0][ii]
                 frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
                 tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
                 tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
                 vd_name_raw = vd_name.split('/')[-1]
                 makedirs_if_missing(visRsFd)
                 visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, visRsFd+'/'+vd_name_raw+ '_' + str(ii)+'.gif')
-
+            pdb.set_trace()
     return resultList
 
+def evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, jpg_folder, visRsFd, visFlag = False, topK=1):
+    resultList= list()
+    bSize = len(person_list)
+    tube_Prp_num = imFtr.shape[1]
+    stIdx = 0
+    #thre_list = [0.2, 0.3, 0.4, 0.5]
+    thre_list = [ 0.5]
+    assert txtFtr.shape[1]==1
+    for idx, person_tmp in enumerate(person_list):
+        lbl = person_tmp.id
+        imFtrSub = imFtr[idx]
+        txtFtrSub = txtFtr[idx].view(-1,1)
+        simMM = torch.mm(imFtrSub, txtFtrSub)
+        simMMReshape = simMM.view(-1, tube_Prp_num) 
+        sortSim, simIdx = torch.sort(simMMReshape, dim=1, descending=True)
+        simIdx = simIdx.data.cpu().numpy().squeeze(axis=0)
+        sort_sim_np = sortSim.data.cpu().numpy().squeeze(axis=0)
+
+        tube_Info_sub = tube_info_list[idx]
+        tube_info_sub_prp, frm_info_list = tube_Info_sub
+        tube_info_sub_prp_bbx, tube_info_sub_prp_score = tube_info_sub_prp
+        prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]] for i in range(topK)], [sort_sim_np[i] for i in range(topK)] ]
+        shot_proposals = [prpListSort, frm_info_list]
+        for ii, thre in enumerate(thre_list): 
+            recall_tmp = evaluate_tube_recall(shot_proposals, person_tmp.shot, person_tmp, thre=thre ,topKOri=topK)
+        resultList.append((lbl, recall_tmp[-1]))
+        #print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
+        
+        # visualize sample results
+        if visFlag:
+            if(recall_tmp[-1]>=0.5):
+                continue
+            
+            vd_name = person_tmp.shot.video_id
+            frmImNameList = [os.path.join(jpg_folder, 'v_' + vd_name, frame_name + '.png') for frame_name in frm_info_list]
+            frmImList = list()
+            for fId, imPath  in enumerate(frmImNameList):
+                img = cv2.imread(imPath)
+                frmImList.append(img)
+            vis_frame_num = 30
+            visIner =max(int(len(frmImList) /vis_frame_num), 1)
+            
+            for ii in range(topK):
+                print('visualizing tube %d\n'%(ii))
+                #pdb.set_trace() 
+                tube = prpListSort[0][ii]
+                frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
+                tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
+                tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
+                vd_name_raw = vd_name.split('/')[-1]
+                makedirs_if_missing(visRsFd)
+                visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, visRsFd+'/'+vd_name_raw+ '_' + str(ii)+'.gif')
+            pdb.set_trace()
+    return resultList
+
+def get_upper_bound():
+    opt = parse_args()
+    opt.dbSet = 'actNet'
+    opt.set_name = 'train'
+    rpNum = 30
+    tube_ftr_dim = 300
+    topK = 30
+
+    # build dataloader
+    dataLoader, datasetOri= build_dataloader(opt) 
+    
+    tube_embedding = np.zeros((1, rpNum, tube_ftr_dim), dtype=np.float32)
+    txt_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    imFtr = torch.FloatTensor(tube_embedding).cuda()
+    txtFtr = torch.FloatTensor(txt_embedding).cuda()
+    
+    #pdb.set_trace()
+    full_result = list() 
+    for index in range(len(datasetOri)):
+        tube_info_index, person_index = datasetOri.get_tube_info(index)
+
+        result_index = evalAcc_actNet(imFtr, txtFtr, [tube_info_index], [person_index], datasetOri.jpg_folder, visRsFd='../data/visResult/actNet', visFlag = False, topK=topK)
+        full_result +=result_index 
+    accSum =0 
+    for ele in full_result:
+        index, recall_k= ele
+        accSum +=recall_k
+    print('Average Accuracy is %3f\n' %(accSum/len(full_result)))
+    pdb.set_trace()
+
+def get_upper_bound_vid():
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    opt.set_name = 'val'
+    rpNum = 30
+    tube_ftr_dim = 300
+    topK = 30
+
+    # build dataloader
+    dataLoader, datasetOri= build_dataloader(opt) 
+    
+    tube_embedding = np.zeros((1, rpNum, tube_ftr_dim), dtype=np.float32)
+    txt_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    imFtr = torch.FloatTensor(tube_embedding).cuda()
+    txtFtr = torch.FloatTensor(txt_embedding).cuda()
+    
+    #pdb.set_trace()
+    full_result = list() 
+    for indexOri in range(len(datasetOri)):
+        tube_info_index, index = datasetOri.get_tube_info(indexOri)
+
+        result_index = evalAcc(imFtr, txtFtr, [tube_info_index], [index], datasetOri, visRsFd='../data/visResult/vid', visFlag=False, topK=topK)
+        full_result +=result_index 
+    accSum =0 
+    for ele in full_result:
+        index, recall_k= ele
+        accSum +=recall_k
+    print('Average Accuracy is %3f\n' %(accSum/len(full_result)))
+    pdb.set_trace()
+
+
+def get_random_average_performance():
+    opt = parse_args()
+    opt.dbSet = 'actNet'
+    opt.set_name = 'train'
+    rpNum = 30
+    tube_ftr_dim = 300
+    topK = 1
+
+    # build dataloader
+    dataLoader, datasetOri= build_dataloader(opt) 
+    
+    tube_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    txt_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    imFtr = torch.FloatTensor(tube_embedding).cuda()
+    txtFtr = torch.FloatTensor(txt_embedding).cuda()
+    
+    full_result = list() 
+    for index in range(len(datasetOri)):
+        tube_info_index, person_index = datasetOri.get_tube_info(index)
+        tube_prp_info, frm_list = tube_info_index
+        result_index = list()
+        for i in range(rpNum):
+            tmp_tube_info_index = [[ [tube_prp_info[0][i]], [tube_prp_info[1][i]]] , frm_list]
+            result_index += evalAcc_actNet(imFtr, txtFtr, [tmp_tube_info_index], [person_index], datasetOri.jpg_folder, visRsFd='../data/visResult/actNet', visFlag = False, topK=topK)
+        acc = 0
+        for ele in result_index:
+            index_tmp, recall_k = ele
+            acc +=recall_k
+        acc_mean = acc*1.0/(len(result_index))
+        result_mean = [[index_tmp, acc_mean]]
+        print(result_mean)
+        full_result +=result_mean 
+    accSum =0 
+    for ele in full_result:
+        index, recall_k= ele
+        accSum +=recall_k
+    print('Average Accuracy is %3f\n' %(accSum/len(full_result)))
+    pdb.set_trace()
+
+
+def get_random_average_performance_vid():
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    opt.set_name = 'train'
+    rpNum = 30
+    tube_ftr_dim = 300
+    topK = 1
+
+    # build dataloader
+    dataLoader, datasetOri= build_dataloader(opt) 
+    
+    tube_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    txt_embedding = np.zeros((1, 1, tube_ftr_dim), dtype=np.float32)
+    imFtr = torch.FloatTensor(tube_embedding).cuda()
+    txtFtr = torch.FloatTensor(txt_embedding).cuda()
+    
+    full_result = list() 
+
+    for indexOri in range(len(datasetOri)):
+        #pdb.set_trace()
+        tube_info_index, index = datasetOri.get_tube_info(indexOri)
+        tube_prp_info, frm_list = tube_info_index
+        result_index = list()
+        for i in range(rpNum):
+            tmp_tube_info_index = [[ [tube_prp_info[0][i]], [tube_prp_info[1][i]]] , frm_list]
+            result_index += evalAcc(imFtr, txtFtr, [tmp_tube_info_index], [index], datasetOri, visRsFd='../data/visResult/vid', visFlag=False, topK=topK)
+        acc = 0
+        for ele in result_index:
+            index_tmp, recall_k = ele
+            acc +=recall_k
+        acc_mean = acc*1.0/(len(result_index))
+        #pdb.set_trace()
+        result_mean = [[index_tmp, acc_mean]]
+        print(result_mean)
+        full_result +=result_mean 
+    accSum =0 
+    for ele in full_result:
+        index, recall_k= ele
+        accSum +=recall_k
+    print('Average Accuracy is %3f\n' %(accSum/len(full_result)))
+    pdb.set_trace()
+
+
+
+
 if __name__=='__main__':
-    drawGt()
-
-
-
-
-
-
-                 
+    #recall_K = get_upper_bound_vid()  
+    #recall_K = get_upper_bound()  
+    #recall_k = get_random_average_performance()
+    recall_k = get_random_average_performance_vid()

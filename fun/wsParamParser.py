@@ -47,23 +47,39 @@ class wsParamParser(BaseParser):
         self.add_argument('--rpNum', default=30, type=int)
         self.add_argument('--vis_dim', default=2048, type=int)
         self.add_argument('--vis_type', default='lstm', type=str)
+        self.add_argument('--txt_type', default='lstm', type=str)
         self.add_argument('--pos_type', default='aiayn', type=str)
         self.add_argument('--pos_emb_dim', default=64, type=int)
         self.add_argument('--half_size', action='store_true', default=False)
+        self.add_argument('--server_id', default=36, type=int)
+        self.add_argument('--vis_ftr_type', default='rgb', type=str)
+        self.add_argument('--struct_flag', action='store_true', default=False)
 
 def parse_args():
     parser = wsParamParser()
     args = parser.parse_args()
-    half_size =''
+    half_size ='full'
     if args.half_size:
         half_size = 'half'
+    struct_ann = ''
+    if args.struct_flag:
+        struct_ann = '_struct_ann_lamda_%d' %(int(args.lamda*10))
+
     args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
-            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) + '_' + half_size
+            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) + \
+            '_' + half_size + '_txt_' + str(args.txt_type) + '_' + str(args.vis_ftr_type) \
+            + '_lr_' + str(args.lr*100000) + '_' + str(args.dbSet) + struct_ann
+    
     args.outPre = args.outPre +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_'+str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
-             + '_' + str(args.wsMode) + str(args.vis_type) + '_'+ str(args.pos_type)+ '_'+ half_size  +'/'
+             + '_' + str(args.wsMode) + str(args.vis_type) + '_'+ str(args.pos_type) + \
+             '_'+ half_size+'_txt_'+str(args.txt_type)+ '_' +str(args.vis_ftr_type)  + \
+             '_lr_' + str(args.lr*100000) + '_' + str(args.dbSet) + struct_ann +'/'
+    
     args.logFdTx = args.logFdTx +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
-            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) +'_' +half_size
+            + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) +'_' + \
+            half_size +'_txt_'+ str(args.txt_type) + '_' + str(args.vis_ftr_type) + '_lr_' + \
+            str(args.lr*100000) + '_' + str(args.dbSet) + struct_ann
     return args

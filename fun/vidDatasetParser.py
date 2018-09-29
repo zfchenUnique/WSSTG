@@ -468,9 +468,6 @@ def show_distribute_over_categories(recall_list, ann_list, thre_list):
         mean_cat_map.append(sum(recall_plot)/float(len(recall_plot)))
     for thre, mAp in zip(thre_list, mean_cat_map):
         print('thre@%f , map: %f\n' %(thre, mAp))
-    
-
-
 
 
 def show_distribute_over_object_size(recall_list, ann_list, thre_list):
@@ -653,19 +650,22 @@ def get_set_visual_feature_cache():
             edIdx = len(param_list)
         parmap(multi_process_get_item_cache, param_list[stIdx: edIdx])
     
-    #pool = Pool(processes=20)
-    #pool.map(multi_process_get_item_cache, param_list)
-    #pool.join()
-    #pool.close()
-    
+def get_h5_feature_dict(h5file_path):
+    img_prp_reader = h5py.File(h5file_path, 'r')
+    return img_prp_reader
+
+
 
 
 if __name__ == '__main__':
+    file_path = '/data1/zfchen/code/video_feature/feature_extraction/tmp/vid/val/0.h5'
+    out_dict = get_h5_feature_dict(file_path)
+    pdb.set_trace()
     #get_set_visual_feature_cache() 
     #vid_caption_processing()
     #vid_valid_caption_preprocessing()
     #statistic_im_prp()
-    vis_im_prp()
+    #vis_im_prp()
     test_im_prp()
     #pdb.set_trace()
 

@@ -11,7 +11,7 @@ import numpy as np
 sys.path.append('../annotations')
 from script_test_annotation import *
 from netUtil import *
-
+import time
 
 def from_pickle_to_h5(vdFd, outFd):
     pdList = get_specific_file_list_from_fd(vdFd, '.pd', nameOnly=False)
@@ -115,7 +115,6 @@ def extract_shot_prp_list_ori(shot, rpPath, tube_prp_num, do_norm=True):
         prp_list.append([tmp_score, tmp_bbx])
     #pdb.set_trace()
     return prp_list, frmList
-
 
 def get_shot_tube_proposals(shot, rpPath, tube_prp_num, tube_thre=0.2, tube_out_path=None):
     prp_list, frm_list = extract_shot_prp_list(shot, rpPath, tube_prp_num)
@@ -232,7 +231,7 @@ def build_actNet_word_list():
         ptd = PTD(set_name)
         descriptions_list = ptd.descriptions
         for disId, disInfo in enumerate(descriptions_list):
-            des_str = ptd.description(disId+1).description
+            des_str = ptd.description(disId+1).description.encode('utf-8')
             wordList = capiton_to_word_list(des_str)
             #pdb.set_trace()
             des_list +=wordList
@@ -273,58 +272,173 @@ def get_actNet_image_list():
     return frm_list
 
 def vis_video_prp_actNet():
-    rpPath = '/data1/zfchen/data/remote_disk/data10/actNet'
-    tubeRpPath = '/data1/zfchen/data/remote_disk/data10/actNet_tube_prp'
+    rpPath = '/data1/zfchen/data/remote_disk/data7/actNet'
+    tubeRpPath = '/data1/zfchen/data/remote_disk/data11/actNet_tube_prp'
     imgFolder = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/actNet/actNetPNG'
-    #vdName = '8rimo9x4qqw'
-    #vdName = '--veKG73Di4'
-    vdName = '-4VuHlphgL4'
-    #vdName = 'jl10JmELMqY'
-    #vdName = 'F99Suh6SvD8'
     outFd = './sample'
     tube_prp_num = 30
     vis_frame_num = 30
+    tube_model_name = 'coco'
     topK =30
+    connect_w = 0.2
+    set_list = ['train', 'test', 'val']
     pdb.set_trace()
-    shotList = video2shot(vdName) 
-    for i, shotInfo in enumerate(shotList):
-        set_name, shotId = shotInfo
+    count_Num =0
+    for set_name in set_list:
         ptd = PTD(set_name)
-        shot=ptd.shot(shotId)
-        for i, des_obj in enumerate(shot.descriptions):
-            print('%s\n' %(des_obj.description))
+        for shot_id in range(1, len(ptd.shots)+1):
+            shot=ptd.shot(shot_id)
+            vdName = shot.video_id
+            tube_save_path = os.path.join(tubeRpPath, set_name, tube_model_name + '_' + str(tube_prp_num) +'_' + str(int(10*connect_w)) , str(shot_id) + '.pd')
+            if os.path.isfile(tube_save_path):
+                tube_info = pickleload(tube_save_path)
+                results, frm_list = tube_info
+            else:
+                continue
+                prp_list, frm_list = extract_shot_prp_list_ori(shot, rpPath, tube_prp_num, do_norm=True)
+                results = get_tubes(prp_list, connect_w)
+            for i, des_obj in enumerate(shot.descriptions):
+                print('%s\n' %(des_obj.description.encode("utf-8")))
+            # test recall tubes
+            if count_Num<3:
+                count_Num +=1
+                continue
+            shot_proposals = [results, frm_list]
+            for ii, person_in_shot in enumerate(shot.people):
+                recall_k = evaluate_tube_recall(shot_proposals, shot, person_in_shot, thre=0.5 ,topKOri=topK)
+                print(recall_k)
+                recall_k = evaluate_tube_recall(shot_proposals, shot, person_in_shot, thre=0.2 ,topKOri=topK)
+                print(recall_k)
 
+            #continue
+            # visualize tubes
+            pdb.set_trace()
+            frmImNameList = get_shot_frames_full_path(shot, imgFolder, '.png')
+            pdb.set_trace() 
+            frmImList = list()
+            for fId, imPath  in enumerate(frmImNameList):
+                img = cv2.imread(imPath)
+                frmImList.append(img)
+
+            visIner = int(len(frmImList) /vis_frame_num )
+            for ii in range(min(len(results[0]), 5)):
+                print('visualizing tube %d\n'%(ii))
+                tube = results[0][ii]
+                frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
+                tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
+                tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
+                visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, 'sample/'+vdName + str(ii)+'.gif')
+
+
+
+def spawn(f):
+    def fun(pipe,x):
+        pipe.send(f(x))
+        pipe.close()
+    return fun
+
+def parmap(f,X):
+    pipe=[Pipe() for x in X]
+    proc=[Process(target=spawn(f),args=(c,x)) for x,(p,c) in izip(X,pipe)]
+    [p.start() for p in proc]
+    [p.join() for p in proc]
+    return [p.recv() for (p,c) in pipe]
+
+def multi_process_connect_tubes_actNet(param_list):
+    shot, rpPath, tube_prp_num, tube_save_path, connect_w = param_list
+    #vid_parser = vidInfoParser(set_name, annFd)
+    if os.path.isfile(tube_save_path):
+        #print('\n file exist\n')
+        return
+    try :
         prp_list, frm_list = extract_shot_prp_list_ori(shot, rpPath, tube_prp_num, do_norm=True)
+    except:
+        print(tube_save_path)
+        print('fail to load the frames\n')
+        handle_file = open('fail_list_data7_new2.txt', 'a')
+        handle_file.write(tube_save_path)
+        handle_file.write('\n')
+        return
+    results = get_tubes(prp_list, connect_w)
+    shot_proposals = [results, frm_list]
+    makedirs_if_missing(os.path.dirname(tube_save_path))        
+    pickledump(tube_save_path, shot_proposals)
+
+
+def extract_video_tube_actNet():
+    rpPath = '/data1/zfchen/data/remote_disk/data7/actNet'
+    tubeRpPath = '/data1/zfchen/data/remote_disk/data11/actNet_tube_prp'
+    imgFolder = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/actNet/actNetPNG'
+    #vdName = '8rimo9x4qqw'
+    #vdName = '--veKG73Di4'
+    #vdName = '-4VuHlphgL4'
+    #vdName = 'jl10JmELMqY'
+    #vdName = 'F99Suh6SvD8'
+    outFd = './sample'
+    tube_model_name = 'coco'
+    tube_prp_num = 30
+    vis_frame_num = 30
+    topK =30
+    cpu_num =10
+    connect_w = 0.2
+    pdb_list ={} 
+    fn_fd_list = os.listdir(rpPath)
+    pool_job_list  = list()
+    #pdb.set_trace()
+
+    for vd_id, vdName_v in enumerate(fn_fd_list):
+        # remove empty folder
+        #if len(os.listdir(rpPath+'/'+vdName_v))==0:
+        #    print('empty folder %s\n' %(vdName_v))
+            #os.rmdir(rpPath+'/'+vdName_v)
+        #    continue
+
+        vdName = vdName_v.split('_', 1)[1]
+        shotList = video2shot(vdName, pdb_list) 
+        print('%d/ %d, %s\n' %(vd_id, len(fn_fd_list), vdName))
+        for i, shotInfo in enumerate(shotList):
+            set_name, shotId = shotInfo
+            if set_name in pdb_list.keys():
+                ptd = pdb_list[set_name]
+            else:
+                ptd = PTD(set_name)
+                pdb_list[set_name] = ptd
+
+            shot=ptd.shot(shotId)
+            tube_save_path = os.path.join(tubeRpPath, set_name, tube_model_name + '_' + str(tube_prp_num) +'_' + str(int(10*connect_w)) , str(shotId) + '.pd')
+            shot_input = [shot, rpPath, tube_prp_num, tube_save_path, connect_w]
+            pool_job_list.append(shot_input) 
+    #pdb.set_trace()
+    for stIdx in range(0, len(pool_job_list), cpu_num):
+        edIdx = stIdx + cpu_num
+        t_st = time.time() 
+        if edIdx>len(pool_job_list):
+            edIdx = len(pool_job_list)
+        parmap(multi_process_connect_tubes_actNet, pool_job_list[stIdx: edIdx])
+        t_end = time.time() 
+        print('Finish %d/ %d tubes, batch size: %d, time: %f' %(stIdx, len(pool_job_list), edIdx-stIdx, t_end-t_st))
+
+    print('finish extracting tubes')
+    return
+
+def check_bad_shots():
+    #vdName = 'll91M5topgU'
+    vdName = 'uOmCwWVJnLQ'
+    pdb_list = {}
+    shot_list = video2shot(vdName, pdb_list) 
+    
+    for shot_info in shot_list:
+        set_name, shot_id = shot_info     
+        ptd = PTD(set_name)
+        shot = ptd.shot(shot_id)
+        print('%s, %d, %d, %d' %(set_name, shot_id, shot.first_frame, shot.last_frame))
         pdb.set_trace()
-        results = get_tubes(prp_list, 0.2)
-        # test recall tubes
-        shot_proposals = [results, frm_list]
-        for ii, person_in_shot in enumerate(shot.people):
-            recall_k = evaluate_tube_recall(shot_proposals, shot, person_in_shot, thre=0.5 ,topKOri=topK)
-            print(recall_k)
-            recall_k = evaluate_tube_recall(shot_proposals, shot, person_in_shot, thre=0.2 ,topKOri=topK)
-            print(recall_k)
 
-        #continue
-        # visualize tubes
-        frmImNameList = get_shot_frames_full_path(shot, imgFolder, '.png')
-        pdb.set_trace() 
-        frmImList = list()
-        for fId, imPath  in enumerate(frmImNameList):
-            img = cv2.imread(imPath)
-            frmImList.append(img)
-
-        visIner = int(len(frmImList) /vis_frame_num )
-        for ii in range(min(len(results[0]), 5)):
-            print('visualizing tube %d\n'%(ii))
-            tube = results[0][ii]
-            frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
-            tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
-            tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
-            visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, 'sample/'+vdName + str(ii)+'.gif')
 
 if __name__ == '__main__':
-    vis_video_prp_actNet() 
+    extract_video_tube_actNet()
+    #check_bad_shots()
+    #vis_video_prp_actNet() 
     #from_img_prp_to_tube(vdName, rpPath, tubeRpPath,  tube_prp_num)
 
     #rpFd = '/data1/zfchen/data/actNet/actNetPrps/v_19YCgLDhfoE'

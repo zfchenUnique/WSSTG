@@ -3,7 +3,7 @@ import torch
 import shutil
 import sys
 import pdb
-from evalDet import *
+#from evalDet import *
 sys.path.append('..')
 from util.mytoolbox import *
 from image_toolbox import *

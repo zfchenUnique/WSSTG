@@ -22,8 +22,8 @@ from vidDatasetParser import *
 from multiprocessing import Process, Pipe, cpu_count, Queue
 from vidDatasetParser import vidInfoParser
 from multiGraphAttention import extract_position_embedding 
+import h5py
 
-set_debugger()
 
 class vidDataloader(data.Dataset):
     def __init__(self, ann_folder, prp_type, set_name, dictFile, tubePath, ftrPath, out_cached_folder):
@@ -40,8 +40,9 @@ class vidDataloader(data.Dataset):
         self.vid_parser = vidInfoParser(set_name, ann_folder) 
         self.use_key_index = self.vid_parser.tube_cap_dict.keys()
         self.use_key_index.sort()
+        self.online_cache ={}
 
-    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False):
+    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False, vis_ftr_type='rgb', i3d_ftr_path=''):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
@@ -49,6 +50,10 @@ class vidDataloader(data.Dataset):
         self.pos_emb_dim = pos_emb_dim
         self.pos_type = pos_type
         self.half_size = half_size
+        self.vis_ftr_type = vis_ftr_type
+        self.i3d_ftr_path = i3d_ftr_path
+        if self.vis_ftr_type=='i3d':
+            self.tube_ftr_dim =1024 # 1024 for rgb, 1024 for flow
 
     def __len__(self):
         return len(self.vid_parser.tube_cap_dict)
@@ -186,6 +191,44 @@ class vidDataloader(data.Dataset):
 
         return tube_embedding, tubeInfo, tube_to_prp_idx
 
+
+    def get_tube_embedding_i3d(self, index, maxTubelegth, out_cached_folder = ''):
+        #pdb.set_trace()
+        rgb_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+        flow_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+        set_name = self.set_name
+        i3d_ftr_path =  os.path.join(self.i3d_ftr_path, set_name, str(index) +'.h5')
+        if i3d_ftr_path in self.online_cache.keys():
+            tube_embedding = self.online_cache[i3d_ftr_path]
+            return tube_embedding
+        h5_handle = h5py.File(i3d_ftr_path, 'r')
+        for tube_id in range(self.rpNum):
+            rgb_tube_ftr = h5_handle[str(tube_id)]['rgb_feature'][()].squeeze()
+            flow_tube_ftr = h5_handle[str(tube_id)]['flow_feature'][()].squeeze()
+            num_tube_ftr = h5_handle[str(tube_id)]['num_feature'][()].squeeze()
+            seg_length = max(int(round(num_tube_ftr/maxTubelegth)), 1)
+            tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+            tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+            #pdb.set_trace()
+            for segId in range(maxTubelegth):
+                #print('%d %d\n' %(tube_id, segId))
+                start_id = segId*seg_length
+                end_id = (segId+1)*seg_length
+                if end_id > num_tube_ftr and num_tube_ftr < maxTubelegth:
+                    break
+                end_id = min((segId+1)*(seg_length), num_tube_ftr)
+                tmp_rgb_tube_embedding[segId, :] = np.mean(rgb_tube_ftr[start_id:end_id], axis=0)
+                tmp_flow_tube_embedding[segId, :] = np.mean(flow_tube_ftr[start_id:end_id], axis=0)
+                 
+            rgb_tube_embedding[tube_id, ...] = tmp_rgb_tube_embedding
+            flow_tube_embedding[tube_id, ...] = tmp_flow_tube_embedding
+       
+        #pdb.set_trace()
+        tube_embedding = np.concatenate((rgb_tube_embedding, flow_tube_embedding), axis=2)
+        self.online_cache[i3d_ftr_path] = tube_embedding
+        return tube_embedding
+
+
     def get_tube_pos_embedding(self, tubeInfo, tube_length, feat_dim=64, feat_type='aiayn'):
         tube_list, frame_list = tubeInfo
         position_mat_raw = torch.zeros((1, self.rpNum, tube_length, 4)) 
@@ -223,8 +266,9 @@ class vidDataloader(data.Dataset):
         else:
             raise  ValueError('%s is not implemented!' %(feat_type))
 
+
+
     def get_visual_item(self, indexOri):
-        #pdb.set_trace()
         index = self.use_key_index[indexOri]
         sumInd = 0
         tube_embedding = None
@@ -233,11 +277,18 @@ class vidDataloader(data.Dataset):
         tAf = time.time() 
         cap_embedding, cap_length_list = self.get_cap_emb(index, self.capNum)
         tBf = time.time() 
-        # get visual tube embedding 
-        tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding(index, self.maxTubelegth, self.out_cache_folder)
-        tAf2 = time.time()
-        tube_embedding = torch.FloatTensor(tube_embedding)
-        #print(self.pos_type)
+        # get visual tube embedding
+        if self.vis_ftr_type =='rgb': 
+            tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding(index, self.maxTubelegth, self.out_cache_folder)
+            tube_embedding = torch.FloatTensor(tube_embedding)
+        elif self.vis_ftr_type =='i3d':
+            tube_embedding  = self.get_tube_embedding_i3d(index, self.maxTubelegth, self.out_cache_folder)
+            tube_embedding = torch.FloatTensor(tube_embedding)
+            ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
+            tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
+            tubeInfo = pickleload(tube_info_path)
+
+        # get position embedding
         if self.pos_type !='none':
             tp1 = time.time() 
             #pdb.set_trace()
@@ -246,13 +297,27 @@ class vidDataloader(data.Dataset):
             tp2 = time.time()
         
             tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+        tAf2 = time.time()
             #print('extract pos time %f\n' %(tp2-tp1))
         #print('index: %d, caption: %f, visual: %f\n'%(indexOri,  tBf-tAf, tAf2-tBf))
         vd_name, ins_in_vd = self.vid_parser.get_shot_info_from_index(index)
         return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name
 
+
+    def get_tube_info(self, indexOri):
+        index = self.use_key_index[indexOri]
+        ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
+        tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
+        tubeInfo = pickleload(tube_info_path)
+        return tubeInfo, index
+
     def __getitem__(self, index):
-        return self.get_visual_item(index)                
+        #index =0
+        #return self.get_visual_item(index)                
+        try:
+            return self.get_visual_item(index)                
+        except:
+            print('----------------------bug on %d----------------------------\n' %(index))
 
 def dis_collate_vid(batch):
     ftr_tube_list = list()
@@ -278,44 +343,20 @@ def dis_collate_vid(batch):
     capMatrix = capMatrix[:, :, :max_length, :]
     return torch.stack(ftr_tube_list, 0), capMatrix, tube_info_list, index_list, cap_length_list, vd_name_list
 
-def build_dataloader(opt):
-    #pdb.set_trace()
-    if opt.dbSet=='vid':
-        ftrPath = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/vidPrp/Data/VID'
-        tubePath = '/data1/zfchen/data/ILSVRC/tubePrp'
-        dictFile = '../data/dictForDb_vid.pd'
-        out_cached_folder = '/data1/zfchen/data/vid/vidTubeCacheFtr'
-        ann_folder = '/data1/zfchen/data/ILSVRC'
-        prp_type = 'coco_30_2'
-        set_name = opt.set_name
-        dataset = vidDataloader(ann_folder, prp_type, set_name, dictFile, tubePath \
-                , ftrPath, out_cached_folder)
-        capNum = opt.capNum 
-        maxWordNum = opt.maxWordNum
-        rpNum = opt.rpNum
-        pos_emb_dim = opt.pos_emb_dim
-        pos_type = opt.pos_type
-        #pdb.set_trace()
-        dataset.image_samper_set_up(rpNum= rpNum, capNum = capNum, \
-                maxWordNum= maxWordNum, usedBadWord=False, \
-                pos_emb_dim=pos_emb_dim, pos_type=pos_type)
-    else:
-        print('Not implemented for dataset %s\n' %(opt.dbSet))
-        return
-    
-    data_loader = data.DataLoader(dataset,  opt.batchSize, \
-            num_workers=opt.num_workers, collate_fn=dis_collate_vid, \
-            shuffle=True, pin_memory=True)
-    return data_loader, dataset
      
 if __name__=='__main__':
+    from datasetLoader import build_dataloader 
     opt = parse_args()
     opt.dbSet = 'vid'
     opt.set_name ='train'
     opt.batchSize = 4
     opt.num_workers = 0
     opt.rpNum =30
+    opt.vis_ftr_type = 'i3d'
     data_loader, dataset  = build_dataloader(opt)
     for index, input_data in enumerate(data_loader):
         print index
+        pdb.set_trace()
+
+
     print('finish!')

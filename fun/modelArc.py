@@ -73,20 +73,29 @@ class wsEmb(nn.Module):
                     nn.init.constant_(m.bias, 0)
 
 class txtEncoder(nn.Module):
-    def __init__(self, embedDim, hidden_dim):
+    def __init__(self, embedDim, hidden_dim, seq_type='lstm'):
         super(txtEncoder, self).__init__()
         self.hidden_dim = hidden_dim
-        self.lstm =nn.LSTM(embedDim, hidden_dim, batch_first=True)
+        self.seq_type = seq_type
+        if seq_type =='lstm':
+            self.lstm =nn.LSTM(embedDim, hidden_dim, batch_first=True)
+        elif seq_type =='gru':
+            self.lstm =nn.GRU(embedDim, hidden_dim, batch_first=True)
         self.hidden = self.init_hidden()
         
     def init_hidden(self, batchSize=10):
-        self.hidden=(torch.zeros(1, batchSize, self.hidden_dim).cuda(),
-                torch.zeros(1, batchSize, self.hidden_dim).cuda())
+        if self.seq_type=='lstm':
+            self.hidden=(torch.zeros(1, batchSize, self.hidden_dim).cuda(),
+                    torch.zeros(1, batchSize, self.hidden_dim).cuda())
+        elif self.seq_type=='gru':
+            self.hidden=torch.zeros(1, batchSize, self.hidden_dim).cuda()
+
 
     def forward(self, wordMatrix, wordLeg=None):
         #pdb.set_trace()
         # shorten steps for faster training
         self.init_hidden(wordMatrix.shape[0])
+        #pdb.set_trace()
         lstmOut, self.hidden = self.lstm(wordMatrix, self.hidden)
         #pdb.set_trace()
         # lstmOut: B*T*D
@@ -100,7 +109,7 @@ class txtEncoder(nn.Module):
 
 def build_txt_encoder(opts):
     embedDim = 300
-    txt_encoder =  txtEncoder(embedDim, opts.dim_ftr)
+    txt_encoder =  txtEncoder(embedDim, opts.dim_ftr, opts.txt_type)
     return txt_encoder 
 
 class visSeqEncoder(nn.Module):
@@ -123,9 +132,9 @@ class visSeqEncoder(nn.Module):
             self.hidden=torch.zeros(1, batchSize, self.hidden_dim).cuda()
 
     def forward(self, wordMatrix, wordLeg=None):
-        #pdb.set_trace()
         # shorten steps for faster training
         self.init_hidden(wordMatrix.shape[0])
+        #pdb.set_trace()
         lstmOut, self.hidden = self.lstm(wordMatrix, self.hidden)
         #pdb.set_trace()
         # lstmOut: B*T*D
