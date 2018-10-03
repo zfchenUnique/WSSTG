@@ -55,7 +55,7 @@ class actNetDataloader(data.Dataset):
 
     def __len__(self):
 
-        #return 64 # for debuging
+        #return 16 # for debuging
         lgh = 0
         for ptd in self.ptdList:
             lgh += len(ptd.people)

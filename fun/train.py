@@ -1,3 +1,16 @@
+import numpy 
+import torch
+import random
+def random_seeding(seed_value, use_cuda):
+    numpy.random.seed(seed_value) # cpu vars
+    torch.manual_seed(seed_value) # cpu  vars
+    random.seed(seed_value)
+    if use_cuda: 
+        torch.cuda.manual_seed_all(seed_value) # gpu vars
+
+seed_value = 1
+random_seeding(seed_value, True)
+
 from wsParamParser import parse_args
 from data.data_loader  import* 
 from datasetLoader import *
@@ -30,6 +43,7 @@ if __name__=='__main__':
         tBf = time.time() 
         for itr, inputData in enumerate(dataLoader):
             tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+            #pdb.set_trace()
             tDf = time.time()
             dataIdx = None
             tmp_bsize = tube_embedding.shape[0]
@@ -66,7 +80,7 @@ if __name__=='__main__':
                 logger('Average accuracy on training batch is %3f\n' %(accSum/len(resultList)))
 
         ## evaluation within an epoch
-            if(ep % opt.saveEp==0 and itr%200==0 and ep>0):
+            if(ep % opt.saveEp==0 and itr==0):
                 checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
                 save_check_point(model.state_dict(), file_name=checkName)
                 model.eval()

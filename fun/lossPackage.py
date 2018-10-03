@@ -3,14 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pdb
 
+class HLoss(nn.Module):
+    def __init__(self):
+        super(HLoss, self).__init__()
+
+    def forward(self, x):
+        b = F.softmax(x, dim=1) * F.log_softmax(x, dim=1)
+        b = -1.0 * b.sum(dim=1)
+        b = torch.mean(b)
+        return b
+
 class lossEvaluator(nn.Module):
-    def __init__(self, margin=0.1, biLossFlag=True, lossWFlag=False, lamda=0.8, struct_flag=False):
+    def __init__(self, margin=0.1, biLossFlag=True, lossWFlag=False, lamda=0.8, struct_flag=False, struct_only_flag=False, entropy_regu_flag=False, lamda2=0.1):
         super(lossEvaluator, self).__init__()
         self.margin =margin
         self.biLossFlag = biLossFlag
         self.lossWFlag = lossWFlag
         self.lamda= lamda
         self.struct_flag = struct_flag
+        self.struct_only_flag = struct_only_flag
+        self.entropy_regu_flag = entropy_regu_flag
+        self.lamda2 = lamda2
+        if self.entropy_regu_flag:
+            self.entropy_calculator = HLoss()
 
     def forward(self, imFtr, disFtr, lblList):
         if not self.lossWFlag:
@@ -30,19 +45,21 @@ class lossEvaluator(nn.Module):
         simMax, maxIdx= torch.max(simMMRe, dim=1)
         loss = torch.zeros(1).cuda()
         pairNum = 0.000001
-        for i, lblIm in enumerate(lblList):
-            posSim = simMax[i, i]
-            for j, lblTxt in enumerate(lblList):
-                if(lblIm==lblTxt):
-                    continue
-                else:
-                    tmpLoss = simMax[i, j] - posSim + self.margin
-                    pairNum +=1
-                    if(tmpLoss>0):
-                        loss +=tmpLoss
-        loss = loss/pairNum
+        
+        if not self.struct_only_flag:
+            for i, lblIm in enumerate(lblList):
+                posSim = simMax[i, i]
+                for j, lblTxt in enumerate(lblList):
+                    if(lblIm==lblTxt):
+                        continue
+                    else:
+                        tmpLoss = simMax[i, j] - posSim + self.margin
+                        pairNum +=1
+                        if(tmpLoss>0):
+                            loss +=tmpLoss
+            loss = loss/pairNum
 
-        if self.biLossFlag:
+        if self.biLossFlag and not self.struct_only_flag:
             lossBi = torch.zeros(1).cuda()
             pairNum =0.000001
             for i, lblTxt in enumerate(lblList):
@@ -70,10 +87,32 @@ class lossEvaluator(nn.Module):
             sim_res_mat_pow2_sqrt = torch.sqrt(sim_res_mat_pow2 + torch.ones(bSize, bSize).cuda()*0.000001)
             #sim_res_mat_pow2_sqrt = sim_res_mat_pow2
             sim_res_l2_loss = sim_res_mat_pow2_sqrt.sum()/(bSize*bSize-bSize)
-            print('biloss %3f, struct loss %3f\n' %(float(loss), float(sim_res_l2_loss)))            
+            print('biloss %3f, struct loss %3f ' %(float(loss), float(sim_res_l2_loss)))            
             loss += self.lamda*sim_res_l2_loss
-            #pdb.set_trace()
 
+        if self.entropy_regu_flag:
+            #simMMRe = simMM.view(bSize, -1, bSize)
+            # simMMRe: bSize, prpNum, bSize
+            ftr_match_pair_list = list()
+            ftr_unmatch_pair_list = list()
+
+            for i in range(bSize):
+                for j in range(bSize):
+                    if i==j:
+                        ftr_match_pair_list.append(simMMRe[i, ..., i])
+                    elif lblList[i]!=lblList[j]:
+                        ftr_unmatch_pair_list.append(simMMRe[i, ..., j])
+
+            ftr_match_pair_mat = torch.stack(ftr_match_pair_list, 0)
+            ftr_unmatch_pair_mat = torch.stack(ftr_unmatch_pair_list, 0)
+            match_num = len(ftr_match_pair_list)
+            unmatch_num = len(ftr_unmatch_pair_list)
+            if match_num>0:
+                entro_loss = self.entropy_calculator(ftr_match_pair_mat)
+            loss +=self.lamda2*entro_loss 
+            print('entropy loss: %3f ' %(float(entro_loss)))
+            #pdb.set_trace()
+        print('\n')
         return loss
 
     def forwardRankW(self, imFtr, disFtr, lblList):
@@ -122,4 +161,6 @@ class lossEvaluator(nn.Module):
 
 def build_lossEval(opts):
     if opts.wsMode == 'rankTube':
-        return lossEvaluator(opts.margin, opts.biLoss, opts.lossW, opts.lamda, opts.struct_flag)
+        return lossEvaluator(opts.margin, opts.biLoss, opts.lossW, \
+                opts.lamda, opts.struct_flag, opts.struct_only, \
+                opts.entropy_regu_flag, opts.lamda2)

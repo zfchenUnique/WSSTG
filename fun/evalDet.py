@@ -127,7 +127,7 @@ def evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, visRsFd, visFlag=Fals
         for ii, thre in enumerate(thre_list):
             recall_tmp= evaluate_tube_recall_vid(shot_proposals, vid_parser, lbl, thre, topKOri=topK)
         resultList.append((lbl, recall_tmp[-1]))
-        print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
+        #print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
         
         #pdb.set_trace()
         if visFlag:
@@ -161,6 +161,69 @@ def evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, jpg_folder, visRs
     bSize = len(person_list)
     tube_Prp_num = imFtr.shape[1]
     stIdx = 0
+    #thre_list = [0.2, 0.3, 0.4, 0.5]
+    thre_list = [ 0.5]
+    txt_num = txtFtr.shape[1]
+    for idx, person_tmp in enumerate(person_list):
+        lbl = person_tmp.id
+        imFtrSub = imFtr[idx]
+        txtFtrSub_batch = txtFtr[idx]
+        txt_num = txtFtrSub_batch.shape[0]
+        for txt_idx  in range(txt_num):
+            txtFtrSub = txtFtrSub_batch[txt_idx].view(-1,1)
+            simMM = torch.mm(imFtrSub, txtFtrSub)
+            simMMReshape = simMM.view(-1, tube_Prp_num) 
+            sortSim, simIdx = torch.sort(simMMReshape, dim=1, descending=True)
+            simIdx = simIdx.data.cpu().numpy().squeeze(axis=0)
+            sort_sim_np = sortSim.data.cpu().numpy().squeeze(axis=0)
+
+            #print(sort_sim_np)
+            tube_Info_sub = tube_info_list[idx]
+            tube_info_sub_prp, frm_info_list = tube_Info_sub
+            tube_info_sub_prp_bbx, tube_info_sub_prp_score = tube_info_sub_prp
+            prpListSort = [ [tube_info_sub_prp_bbx[simIdx[i]] for i in range(topK)], [sort_sim_np[i] for i in range(topK)] ]
+            shot_proposals = [prpListSort, frm_info_list]
+            for ii, thre in enumerate(thre_list): 
+                recall_tmp = evaluate_tube_recall(shot_proposals, person_tmp.shot, person_tmp, thre=thre ,topKOri=topK)
+            resultList.append((lbl, recall_tmp[-1]))
+            #print('accuracy for %d: %3f' %(lbl, recall_tmp[-1]))
+            
+            # visualize sample results
+            if visFlag:
+                if(recall_tmp[-1]>=0.5):
+                    continue
+                
+                vd_name = person_tmp.shot.video_id
+                frmImNameList = [os.path.join(jpg_folder, 'v_' + vd_name, frame_name + '.png') for frame_name in frm_info_list]
+                frmImList = list()
+                for fId, imPath  in enumerate(frmImNameList):
+                    img = cv2.imread(imPath)
+                    frmImList.append(img)
+                vis_frame_num = 30
+                visIner =max(int(len(frmImList) /vis_frame_num), 1)
+                
+                for ii in range(topK):
+                    print('visualizing tube %d\n'%(ii))
+                    #pdb.set_trace() 
+                    tube = prpListSort[0][ii]
+                    frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
+                    tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
+                    tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
+                    vd_name_raw = vd_name.split('/')[-1]
+                    makedirs_if_missing(visRsFd)
+                    visTube_from_image(copy.deepcopy(frmImList_vis), tube_vis_resize, visRsFd+'/'+vd_name_raw+ '_' + str(ii)+'.gif')
+                pdb.set_trace()
+    return resultList
+
+
+
+
+def evalAcc_actNet_ori(imFtr, txtFtr, tube_info_list, person_list, jpg_folder, visRsFd, visFlag = False, topK=1):
+    resultList= list()
+    bSize = len(person_list)
+    tube_Prp_num = imFtr.shape[1]
+    stIdx = 0
+    pdb.set_trace()
     #thre_list = [0.2, 0.3, 0.4, 0.5]
     thre_list = [ 0.5]
     assert txtFtr.shape[1]==1

@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 from multiGraphAttention import *
-
+from netvlad import NetVLAD
 
 class wsEmb(nn.Module):
     def __init__(self, imEncoder, wordEncoder):
@@ -14,6 +14,7 @@ class wsEmb(nn.Module):
         self.wordEncoder = wordEncoder
         self._initialize_weights()
         self.wsMode = 'rank'
+        self.vis_type = 'fc'
 
     def forward(self, imDis, wordEmb, capLengthsFull=None, frmListFull=None, rpListFull=None, dataIdx=None):
         if dataIdx is not None:
@@ -40,12 +41,12 @@ class wsEmb(nn.Module):
             return imEnDis, wordEnDis
 
     def forwardRank(self, imDis, wordEmb, capLengths):
-        #pdb.set_trace()
         if self.vis_type =='fc':
             imDis = imDis.mean(1)
         else:
             assert len(imDis.size())==3
         assert len(wordEmb.size())==3
+        #pdb.set_trace()
         imEnDis = self.imEncoder(imDis)
         wordEnDis = self.wordEncoder(wordEmb, capLengths)
         assert len(imEnDis.size())==2
@@ -156,6 +157,32 @@ def build_vis_fc_encoder(opts):
             )
     return visNet
 
+class vlad_encoder(nn.Module):
+    def __init__(self, input_dim, out_dim, hidden_dim, centre_num, alpha=1.0):
+        super(vlad_encoder, self).__init__()
+        self.fc1 = torch.nn.Linear(input_dim, hidden_dim)
+        self.net_vlad = NetVLAD(num_clusters= centre_num, dim= hidden_dim, alpha=1.0)
+        self.fc2 = torch.nn.Linear(centre_num*hidden_dim, out_dim)
+
+    def forward(self, input_data):
+        #pdb.set_trace()
+        input_hidden = self.fc1(input_data)
+        input_hidden = F.relu(input_hidden)
+        input_hidden = input_hidden.unsqueeze(dim=3)
+        input_hidden = input_hidden.transpose(dim0=1, dim1=2)
+        input_vlad = self.net_vlad(input_hidden)
+        out_vlad = self.fc2(input_vlad)
+        out_vlad = F.relu(out_vlad)
+        return out_vlad
+
+def build_vis_vlad_encoder_v1(opts):
+    input_dim = opts.vis_dim
+    hidden_dim = opts.hidden_dim
+    centre_num = opts.centre_num
+    out_dim = opts.dim_ftr
+    alpha = opts.vlad_alpha
+    vis_encoder  = vlad_encoder(input_dim, out_dim, hidden_dim, centre_num, alpha=1.0 ) 
+    return vis_encoder
 
 def build_vis_seq_encoder(opts):
     embedDim = opts.vis_dim
@@ -165,7 +192,9 @@ def build_vis_seq_encoder(opts):
     elif opts.vis_type == 'fc':
         vis_avg_encoder = build_vis_fc_encoder(opts)
         return vis_avg_encoder
-
+    elif opts.vis_type == 'vlad_v1':
+        vis_vlad_encoder = build_vis_vlad_encoder_v1(opts)
+        return vis_vlad_encoder
 
 def build_network(opts):
     if opts.wsMode =='rankTube': 

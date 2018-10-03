@@ -1,3 +1,16 @@
+import numpy 
+import torch
+import random
+def random_seeding(seed_value, use_cuda):
+    numpy.random.seed(seed_value) # cpu vars
+    torch.manual_seed(seed_value) # cpu  vars
+    random.seed(seed_value)
+    if use_cuda: 
+        torch.cuda.manual_seed_all(seed_value) # gpu vars
+
+seed_value = 1
+random_seeding(seed_value, True)
+
 from wsParamParser import parse_args
 from data.data_loader  import* 
 from datasetLoader import *
@@ -30,6 +43,9 @@ if __name__=='__main__':
         for itr, inputData in enumerate(dataLoader):
             tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list = inputData
             tDf = time.time()
+            #print(shot_list)
+            #print(cap_length_list)
+            #pdb.set_trace()
             #pdb.set_trace()
             dataIdx = None
             tmp_bsize = tube_embedding.shape[0]
@@ -65,14 +81,49 @@ if __name__=='__main__':
                 logger('Average accuracy on training batch is %3f\n' %(accSum/len(resultList)))
                 tBf = time.time()
         ## evaluation within an epoch
-            if(ep % opt.saveEp==0 and itr==200 and itr>0):
+            if(ep % opt.saveEp==0 and itr==0):
                 checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
                 save_check_point(model.state_dict(), file_name=checkName)
                 model.eval()
                 resultList = list()
                 vIdList = list()
                 set_name_ori= opt.set_name
+                cap_num_ori = opt.capNum
                 opt.set_name = 'val'
+                opt.capNum = 5
+                dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
+                #pdb.set_trace()
+                for itr_eval, inputData in enumerate(dataLoaderEval):
+                    tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list = inputData
+                    dataIdx = None
+                    #pdb.set_trace()
+                    b_size = tube_embedding.shape[0]
+                    # B*P*T*D
+                    imDis = tube_embedding.cuda()
+                    imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
+                    wordEmb = cap_embedding.cuda()
+                    wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
+                    imDis.requires_grad=False
+                    wordEmb.requires_grad=False
+                    if opt.wsMode=='rankTube':
+                        imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
+                        imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
+                        txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
+                        resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False)
+
+                accSum = 0
+                for ele in resultList:
+                    index, recall_k= ele
+                    accSum +=recall_k
+                logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
+                writer.add_scalar('Average validation accuracy', accSum/len(resultList), ep*len(datasetOri)+ itr*opt.batchSize)
+                #pdb.set_trace()
+                # testing on testing set
+                resultList = list()
+                vIdList = list()
+                set_name_ori= opt.set_name
+                opt.set_name = 'test'
+                opt.capNum = 5
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
@@ -98,11 +149,13 @@ if __name__=='__main__':
                 for ele in resultList:
                     index, recall_k= ele
                     accSum +=recall_k
-                logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
+                logger('Average accuracy on testing set is %3f\n' %(accSum/len(resultList)))
                 writer.add_scalar('Average testing accuracy', accSum/len(resultList), ep*len(datasetOri)+ itr*opt.batchSize)
-                #pdb.set_trace()
+                
+                
                 model.train()
                 opt.set_name = set_name_ori
+                opt.capNum = cap_num_ori
                 
         accSum = 0
         for ele in resultList_full:

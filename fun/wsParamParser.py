@@ -54,6 +54,14 @@ class wsParamParser(BaseParser):
         self.add_argument('--server_id', default=36, type=int)
         self.add_argument('--vis_ftr_type', default='rgb', type=str)
         self.add_argument('--struct_flag', action='store_true', default=False)
+        self.add_argument('--struct_only', action='store_true', default=False)
+        self.add_argument('--eval_val_flag', action='store_true', default=False)
+        self.add_argument('--eval_test_flag', action='store_true', default=False)
+        self.add_argument('--entropy_regu_flag', action='store_true', default=False)
+        self.add_argument('--lamda2', default=0.1, type=float)
+        self.add_argument('--hidden_dim', default=128, type=int)
+        self.add_argument('--centre_num', default=32, type=int)
+        self.add_argument('--vlad_alpha', default=1.0, type=float)
 
 def parse_args():
     parser = wsParamParser()
@@ -64,6 +72,17 @@ def parse_args():
     struct_ann = ''
     if args.struct_flag:
         struct_ann = '_struct_ann_lamda_%d' %(int(args.lamda*10))
+        if args.struct_only:
+            struct_ann =  struct_ann + '_only'
+    if args.entropy_regu_flag:
+        struct_ann = struct_ann + '_lamda2_' + str(args.lamda2*10)
+
+    struct_ann = struct_ann + '_margin_'+ str(args.margin*10)
+
+    if args.vis_type =='vlad_v1':
+        struct_ann = struct_ann + '_centre_' + str(args.centre_num) \
+                + '_hidden_dim_' + str(args.hidden_dim)
+
 
     args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \

@@ -59,6 +59,16 @@ def build_dataloader(opt):
         out_cached_folder = '/data1/zfchen/data/actNet/actNetTubeCacheFtr'
         jpg_folder = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/actNet/actNetPNG'
         i3d_ftr_path = '/data1/zfchen/data/remote_disk/data4/actNet/i3d/actNet/'
+        
+        if opt.server_id !=36:
+            ftrPath = ['/data1/zfchen/data/remote_disk/data10/actNet',
+                '/data1/zfchen/data/remote_disk/data7/actNet']
+            tubePath = '/data1/zfchen/data/remote_disk/data11/actNet_tube_prp'
+            dictFile = '../data/dict_actNet.pd'
+            out_cached_folder = '/data1/zfchen/data36/actNet/actNetTubeCacheFtr'
+            jpg_folder = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/actNet/actNetPNG'
+            i3d_ftr_path = '/data1/zfchen/data/actNet/i3d/actNet/'
+        
         if opt.set_name =='train_val':
             set_name_list = ['train', 'val']
         else:
