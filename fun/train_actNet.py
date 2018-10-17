@@ -60,28 +60,41 @@ if __name__=='__main__':
                 imFtr = imFtr.view(tmp_bsize, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(tmp_bsize, -1, opt.dim_ftr)
 #                pdb.set_trace()
+                #tDf2 = time.time()
                 loss = lossEster(imFtr, txtFtr, shot_list)
-                resultList = evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                resultList_full +=resultList
+                #tDf3 = time.time()
+                #print(tDf3-tDf2)
+            if opt.wsMode =='coAtt':
+                simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                loss = lossEster(simMM=simMM, lblList =shot_list)
 
             if loss<=0:
                 continue
             optimizer.zero_grad()
             loss.backward(retain_graph=True )
             tL2 = time.time()
+            tAf = time.time()
             optimizer.step()
             if(itr%opt.visIter==0):
-                tAf = time.time()
-                logger('Ep: %d, Iter: %d, T1: %3f, T2:%3f, loss: %3f\n' %(ep, itr, (tDf-tBf)/opt.visIter, (tAf-tBf)/opt.visIter,  float(loss.data.cpu().numpy())))
+                logger('Ep: %d, Iter: %d, T1: %3f, T2:%3f, loss: %3f\n' %(ep, itr, (tDf-tBf), (tAf-tBf),  float(loss.data.cpu().numpy())))
                 writer.add_scalar('loss', loss.data.cpu()[0], ep*len(datasetOri)+itr*opt.batchSize)
+                resultList = list()
+                if opt.wsMode=='rankTube':
+                    resultList = evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
+                elif opt.wsMode=='coAtt':
+                    resultList = evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
+                resultList_full +=resultList
                 accSum = 0
                 for ele in resultList:
+                    #continue
                     index, recall_k= ele
                     accSum +=recall_k
-                logger('Average accuracy on training batch is %3f\n' %(accSum/len(resultList)))
-                tBf = time.time()
+                logger('Average accuracy on training batch is %3f\n' %(accSum/(len(resultList)+0.000001)))
         ## evaluation within an epoch
-            if(ep % opt.saveEp==0 and itr==0):
+            tBf = time.time()
+            if(ep % opt.saveEp==0 and itr==0 and ep>0):
+#                pdb.set_trace()
                 checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
                 save_check_point(model.state_dict(), file_name=checkName)
                 model.eval()
@@ -91,6 +104,8 @@ if __name__=='__main__':
                 cap_num_ori = opt.capNum
                 opt.set_name = 'val'
                 opt.capNum = 5
+                if opt.wsMode =='coAtt':
+                    opt.capNum = 1
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
@@ -111,6 +126,11 @@ if __name__=='__main__':
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False)
 
+                    if opt.wsMode =='coAtt':
+                        simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
+                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
+                
                 accSum = 0
                 for ele in resultList:
                     index, recall_k= ele
@@ -124,6 +144,8 @@ if __name__=='__main__':
                 set_name_ori= opt.set_name
                 opt.set_name = 'test'
                 opt.capNum = 5
+                if opt.wsMode =='coAtt':
+                    opt.capNum = 1          # for memory issue
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
@@ -145,6 +167,10 @@ if __name__=='__main__':
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False)
 
+                    if opt.wsMode =='coAtt':
+                        simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
+                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
                 accSum = 0
                 for ele in resultList:
                     index, recall_k= ele
@@ -159,9 +185,10 @@ if __name__=='__main__':
                 
         accSum = 0
         for ele in resultList_full:
+            #continue
             index, recall_k= ele
             accSum +=recall_k
-        writer.add_scalar('Average training accuracy', accSum/len(resultList_full), ep*len(datasetOri)+ itr*opt.batchSize)
+        writer.add_scalar('Average training accuracy', accSum/(len(resultList_full)+0.000001), ep*len(datasetOri)+ itr*opt.batchSize)
         checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
         save_check_point(model.state_dict(), file_name=checkName)
                 #dataLoader, datasetOri= build_dataloader(opt) 

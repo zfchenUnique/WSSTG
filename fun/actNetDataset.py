@@ -19,6 +19,7 @@ from wsParamParser import parse_args
 from ptd_api import *
 from actNetDatasetParser import *
 from multiGraphAttention import extract_position_embedding 
+import torch.nn.functional as F
 
 
 class actNetDataloader(data.Dataset):
@@ -36,8 +37,12 @@ class actNetDataloader(data.Dataset):
         self.cache_ftr_dict = {}
         self.online_cache = {}
         self.cache_ftr_dict_flag = True
+        self.use_mean_cache_flag = False
+        self.mean_cache_ftr_path = ''
 
-    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_type='none', pos_emb_dim=64, vis_ftr_type='rgb', i3d_ftr_path=''):
+    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, \
+            pos_type='none', pos_emb_dim=64, vis_ftr_type='rgb', i3d_ftr_path='', \
+            use_mean_cache_flag=False, mean_cache_ftr_path=''):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
@@ -50,8 +55,10 @@ class actNetDataloader(data.Dataset):
         self.i3d_ftr_path = i3d_ftr_path
         self.pos_emb_dim = pos_emb_dim
         self.pos_type = pos_type
-        if self.vis_ftr_type=='i3d':
-            self.tube_ftr_dim =1024 # 1024 for rgb, 1024 for flow
+        self.use_mean_cache_flag = use_mean_cache_flag
+        self.mean_cache_ftr_path = mean_cache_ftr_path
+        
+        self.tube_ftr_dim_i3d =1024 # 1024 for rgb, 1024 for flow
 
     def __len__(self):
 
@@ -204,8 +211,8 @@ class actNetDataloader(data.Dataset):
     def get_tube_embedding_i3d(self, shot_info, maxTubelegth, out_cached_folder = ''):
         #pdb.set_trace()
         index, set_idx = shot_info
-        rgb_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
-        flow_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+        rgb_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+        flow_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
         set_name = self.set_name_list[set_idx]
         i3d_ftr_path =  os.path.join(self.i3d_ftr_path, set_name, str(index) +'.h5')
         if i3d_ftr_path in self.online_cache.keys():
@@ -218,8 +225,8 @@ class actNetDataloader(data.Dataset):
                 flow_tube_ftr = h5_handle[str(tube_id)]['flow_feature'][()].squeeze()
                 num_tube_ftr = h5_handle[str(tube_id)]['num_feature'][()].squeeze()
                 seg_length = max(int(round(num_tube_ftr/maxTubelegth)), 1)
-                tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
-                tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+                tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+                tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
                 #pdb.set_trace()
                 for segId in range(maxTubelegth):
                     #print('%d %d\n' %(tube_id, segId))
@@ -295,6 +302,7 @@ class actNetDataloader(data.Dataset):
         return tubeInfo, person_index
 
     def get_visual_item(self, indexOri):
+        #pdb.set_trace()
         index = indexOri
         sumInd = 0
         tube_embedding = None
@@ -315,23 +323,75 @@ class actNetDataloader(data.Dataset):
             #print('caption: %d, %f\n'%(indexOri, tAf-tBf))
             # get visual tube embedding 
             shot_id = person_index.shot.id
+            if self.use_mean_cache_flag:
+                if self.vis_ftr_type=='rgb' or self.vis_ftr_type=='i3d':
+                    mean_tube_ftr_path = os.path.join(self.mean_cache_ftr_path, self.set_name_list[set_idx],\
+                           'mean_feature_'+ self.vis_ftr_type + '.h5')
+                    f_handle = h5py.File(mean_tube_ftr_path, 'r')
+                    key_str = str(self.maxTubelegth) + '_' + str(shot_id)
+                    tube_embedding_np = f_handle[key_str][()]
+                    tube_embedding = torch.FloatTensor(tube_embedding_np).unsqueeze(dim=1)
+
+                elif self.vis_ftr_type=='rgb_i3d':
+                    tube_embedding_list = list()
+                    for vis_ftr_type  in ['i3d', 'rgb']:
+                    #for vis_ftr_type  in ['i3d', 'i3d']:
+                        #pdb.set_trace()
+                        mean_tube_ftr_path = os.path.join(self.mean_cache_ftr_path, self.set_name_list[set_idx],\
+                            'mean_feature_'+ vis_ftr_type + '.h5')
+                        f_handle = h5py.File(mean_tube_ftr_path, 'r')
+                        key_str = str(self.maxTubelegth) + '_' + str(shot_id)
+                        tube_embedding_np = f_handle[key_str][()]
+                        #f_handle.close()
+                        tube_embedding_pyt = torch.FloatTensor(tube_embedding_np).unsqueeze(dim=1)
+                        tube_embedding_pyt = F.normalize(tube_embedding_pyt, p=2, dim=2)
+                        tube_embedding_list.append(tube_embedding_pyt)
+                    tube_embedding = torch.cat(tube_embedding_list, dim=2)
+
+                #t1 =time.time()
+                tube_info_path = os.path.join(self.tubePath, self.set_name_list[set_idx], self.prp_type, str(shot_id)+'.pd') 
+                tubeInfo = pickleload(tube_info_path)
+                #t2 =time.time()
+                #print(t2-t1)
+
+                if self.pos_type !='none':
+                    tp1 = time.time() 
+                    #pdb.set_trace()
+                    tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
+                            feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
+                    tp2 = time.time()
+                    tube_embedding_pos = tube_embedding_pos.mean(1).unsqueeze(dim=1)
+                    tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+            
+                return tube_embedding, cap_embedding, tubeInfo, person_index, cap_length_list, shot_id
+
+            shot_id = person_index.shot.id
             cache_str_shot_str = str(set_idx) +'_' + str(shot_id)
+
+            tube_embedding_list = list()
+            #pdb.set_trace()
             if cache_str_shot_str in self.cache_ftr_dict.keys():
-                if self.vis_ftr_type=='rgb':
+                if self.vis_ftr_type=='rgb' or self.vis_ftr_type=='rgb_i3d':
                     tube_embedding, tubeInfo, tube_to_prp_idx = self.cache_ftr_dict[cache_str_shot_str]
                     print('using cache ftr %s' %(cache_str_shot_str))
                 elif self.vis_ftr_type=='i3d':
                     tube_embedding, tubeInfo = self.cache_ftr_dict[cache_str_shot_str]
             else:
-                if self.vis_ftr_type == 'rgb':
+                if self.vis_ftr_type == 'rgb' or self.vis_ftr_type =='rgb_i3d':
                     tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding([set_idx, shot_id], self.maxTubelegth, self.out_cache_folder)
-                elif self.vis_ftr_type =='i3d':
+                    if self.vis_ftr_type=='rgb_i3d':
+                        tube_embedding_list.append(tube_embedding)
+                if self.vis_ftr_type =='i3d' or self.vis_ftr_type=='rgb_i3d':
                     tube_embedding  = self.get_tube_embedding_i3d([shot_id, set_idx], self.maxTubelegth, self.out_cache_folder)
                     set_name = self.set_name_list[set_idx]
                     tube_prp_path = os.path.join(self.tubePath, set_name, self.prp_type, str(shot_id)+'.pd') 
                     tubeInfo = pickleload(tube_prp_path)
+                    if self.vis_ftr_type=='rgb_i3d':
+                        tube_embedding_list.append(tube_embedding)
                     
             tAf2 = time.time() 
+            if self.vis_ftr_type=='rgb_i3d' and cache_str_shot_str not in self.cache_ftr_dict.keys():
+                tube_embedding = np.concatenate(tube_embedding_list, axis=2)
             tube_embedding = torch.FloatTensor(tube_embedding)
             #print('visual: %d, %f\n'%(indexOri, tAf2-tAf))
             if self.pos_type !='none':
@@ -343,6 +403,8 @@ class actNetDataloader(data.Dataset):
                 tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
 
             if self.cache_ftr_dict_flag and self.vis_ftr_type=='rgb':
+                self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo, tube_to_prp_idx]
+            elif self.cache_ftr_dict_flag and self.vis_ftr_type=='rgb_i3d':
                 self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo, tube_to_prp_idx]
             elif self.cache_ftr_dict_flag and self.vis_ftr_type=='i3d':
                 self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo]

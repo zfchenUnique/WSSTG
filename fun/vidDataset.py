@@ -41,8 +41,14 @@ class vidDataloader(data.Dataset):
         self.use_key_index = self.vid_parser.tube_cap_dict.keys()
         self.use_key_index.sort()
         self.online_cache ={}
+        self.i3d_cache_flag = False
+        self.cache_flag = False
+        self.cache_ftr_dict = {}
+        self.use_mean_cache_flag = False
+        self.mean_cache_ftr_path = ''
 
-    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False, vis_ftr_type='rgb', i3d_ftr_path=''):
+
+    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False, vis_ftr_type='rgb', i3d_ftr_path='', use_mean_cache_flag=False, mean_cache_ftr_path=''):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
@@ -52,10 +58,14 @@ class vidDataloader(data.Dataset):
         self.half_size = half_size
         self.vis_ftr_type = vis_ftr_type
         self.i3d_ftr_path = i3d_ftr_path
+        self.use_mean_cache_flag = use_mean_cache_flag
+        self.mean_cache_ftr_path = mean_cache_ftr_path
         if self.vis_ftr_type=='i3d':
             self.tube_ftr_dim =1024 # 1024 for rgb, 1024 for flow
+        self.tube_ftr_dim_i3d =1024 # 1024 for rgb, 1024 for flow
 
     def __len__(self):
+        #return 2000
         return len(self.vid_parser.tube_cap_dict)
 
     def get_word_emb_from_str(self, capString, maxWordNum):
@@ -185,7 +195,7 @@ class vidDataloader(data.Dataset):
             makedirs_if_missing(dir_name)
             pickledump(tmp_cache_tube_feature_path, [tube_embedding, tubeInfo, tube_to_prp_idx])
     
-        if self.vis_half_size:
+        if self.half_size:
             tube_embedding = tube_embedding.view(self.rpNum, self.maxTubelegth/2, 2, self.tube_ftr_dim)
             tube_embedding = np.mean(tube_embedding, axis=2)
 
@@ -194,11 +204,11 @@ class vidDataloader(data.Dataset):
 
     def get_tube_embedding_i3d(self, index, maxTubelegth, out_cached_folder = ''):
         #pdb.set_trace()
-        rgb_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
-        flow_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+        rgb_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+        flow_tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
         set_name = self.set_name
         i3d_ftr_path =  os.path.join(self.i3d_ftr_path, set_name, str(index) +'.h5')
-        if i3d_ftr_path in self.online_cache.keys():
+        if i3d_ftr_path in self.online_cache.keys() and self.i3d_cache_flag:
             tube_embedding = self.online_cache[i3d_ftr_path]
             return tube_embedding
         h5_handle = h5py.File(i3d_ftr_path, 'r')
@@ -207,8 +217,8 @@ class vidDataloader(data.Dataset):
             flow_tube_ftr = h5_handle[str(tube_id)]['flow_feature'][()].squeeze()
             num_tube_ftr = h5_handle[str(tube_id)]['num_feature'][()].squeeze()
             seg_length = max(int(round(num_tube_ftr/maxTubelegth)), 1)
-            tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
-            tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+            tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+            tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
             #pdb.set_trace()
             for segId in range(maxTubelegth):
                 #print('%d %d\n' %(tube_id, segId))
@@ -277,27 +287,91 @@ class vidDataloader(data.Dataset):
         tAf = time.time() 
         cap_embedding, cap_length_list = self.get_cap_emb(index, self.capNum)
         tBf = time.time() 
-        # get visual tube embedding
-        if self.vis_ftr_type =='rgb': 
-            tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding(index, self.maxTubelegth, self.out_cache_folder)
-            tube_embedding = torch.FloatTensor(tube_embedding)
-        elif self.vis_ftr_type =='i3d':
-            tube_embedding  = self.get_tube_embedding_i3d(index, self.maxTubelegth, self.out_cache_folder)
+        
+        if self.use_mean_cache_flag:
+            if self.vis_ftr_type=='rgb' or self.vis_ftr_type=='i3d':
+                mean_tube_ftr_path = os.path.join(self.mean_cache_ftr_path, self.set_name,\
+                       'mean_feature_'+ self.vis_ftr_type + '.h5')
+                f_handle = h5py.File(mean_tube_ftr_path, 'r')
+                key_str = str(self.maxTubelegth) + '_' + str(index)
+                tube_embedding_np = f_handle[key_str][()]
+                tube_embedding = torch.FloatTensor(tube_embedding_np).unsqueeze(dim=1)
+            
+            elif self.vis_ftr_type=='rgb_i3d':
+                tube_embedding_list = list()
+                for vis_ftr_type  in ['rgb', 'i3d']:
+                    mean_tube_ftr_path = os.path.join(self.mean_cache_ftr_path, self.set_name,\
+                        'mean_feature_'+ vis_ftr_type + '.h5')
+                    f_handle = h5py.File(mean_tube_ftr_path, 'r')
+                    key_str = str(self.maxTubelegth) + '_' + str(index)
+                    tube_embedding_np = f_handle[key_str][()]
+                    tube_embedding_pyt = torch.FloatTensor(tube_embedding_np).unsqueeze(dim=1)
+                    tube_embedding_list.append(tube_embedding_pyt)
+                tube_embedding = torch.cat(tube_embedding_list, dim=2)
+
+            vd_name, ins_in_vd = self.vid_parser.get_shot_info_from_index(index)
             tube_embedding = torch.FloatTensor(tube_embedding)
             ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
             tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
             tubeInfo = pickleload(tube_info_path)
+            
+            if self.pos_type !='none':
+                tp1 = time.time() 
+                #pdb.set_trace()
+                tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
+                        feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
+                tp2 = time.time()
+                tube_embedding_pos = tube_embedding_pos.mean(1).unsqueeze(dim=1)
+                tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+            
+            return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name
 
-        # get position embedding
-        if self.pos_type !='none':
-            tp1 = time.time() 
-            #pdb.set_trace()
-            tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
-                    feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
-            tp2 = time.time()
-        
-            tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
-        tAf2 = time.time()
+        cache_str_shot_str = str(self.maxTubelegth) +'_' + str(index)
+        #pdb.set_trace()
+        tube_embedding_list = list()
+        #pdb.set_trace()
+        if cache_str_shot_str in self.cache_ftr_dict.keys():
+            if self.vis_ftr_type=='rgb'or self.vis_ftr_type=='rgb_i3d':
+                tube_embedding, tubeInfo, tube_to_prp_idx = self.cache_ftr_dict[cache_str_shot_str]
+                #print('using cache ftr %s' %(cache_str_shot_str))
+            elif self.vis_ftr_type=='i3d':
+                tube_embedding, tubeInfo = self.cache_ftr_dict[cache_str_shot_str]
+        # get visual tube embedding
+        else:
+            if self.vis_ftr_type =='rgb'or self.vis_ftr_type=='rgb_i3d':
+                tube_embedding, tubeInfo, tube_to_prp_idx  = self.get_tube_embedding(index, self.maxTubelegth, self.out_cache_folder)
+                if self.vis_ftr_type=='rgb_i3d':
+                    tube_embedding_list.append(tube_embedding)
+                tube_embedding = torch.FloatTensor(tube_embedding)
+            if self.vis_ftr_type =='i3d' or self.vis_ftr_type=='rgb_i3d':
+                tube_embedding  = self.get_tube_embedding_i3d(index, self.maxTubelegth, self.out_cache_folder)
+                ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
+                tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
+                tubeInfo = pickleload(tube_info_path)
+                if self.vis_ftr_type=='rgb_i3d':
+                    tube_embedding_list.append(tube_embedding)
+                tube_embedding = torch.FloatTensor(tube_embedding)
+            
+            if self.vis_ftr_type=='rgb_i3d' and cache_str_shot_str not in self.cache_ftr_dict.keys():
+                tube_embedding = np.concatenate(tube_embedding_list, axis=2)
+            tube_embedding = torch.FloatTensor(tube_embedding)
+
+            # get position embedding
+            if self.pos_type !='none':
+                tp1 = time.time() 
+                #pdb.set_trace()
+                tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
+                        feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
+                tp2 = time.time()
+                tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+            
+            if self.cache_flag and self.vis_ftr_type=='rgb':
+                self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo, tube_to_prp_idx]
+            elif self.cache_flag and self.vis_ftr_type=='rgb_i3d':
+                self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo, tube_to_prp_idx]
+            elif self.cache_flag and self.vis_ftr_type=='i3d':
+                self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo]
+            tAf2 = time.time()
             #print('extract pos time %f\n' %(tp2-tp1))
         #print('index: %d, caption: %f, visual: %f\n'%(indexOri,  tBf-tAf, tAf2-tBf))
         vd_name, ins_in_vd = self.vid_parser.get_shot_info_from_index(index)
@@ -313,7 +387,7 @@ class vidDataloader(data.Dataset):
 
     def __getitem__(self, index):
         #index =0
-        #return self.get_visual_item(index)                
+        return self.get_visual_item(index)                
         try:
             return self.get_visual_item(index)                
         except:

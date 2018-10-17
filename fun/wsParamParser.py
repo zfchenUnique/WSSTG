@@ -62,6 +62,20 @@ class wsParamParser(BaseParser):
         self.add_argument('--hidden_dim', default=128, type=int)
         self.add_argument('--centre_num', default=32, type=int)
         self.add_argument('--vlad_alpha', default=1.0, type=float)
+        self.add_argument('--cache_flag', action='store_true', default=False)
+        self.add_argument('--use_mean_cache_flag', action='store_true', default=False)
+        self.add_argument('--dropout_prob', type=float, default=0.1)
+        self.add_argument('--batch_size', type=int, default=64)
+        self.add_argument('--video_time_step', type=int, default=20) #tacos300 DDM 6
+        self.add_argument('--caption_time_step', type=int, default=20) # tacos65 DDM 15
+        self.add_argument('--video_embedding_size', type=int, default=512)
+        self.add_argument('--fc_feat_size', type=int, default=2048)
+        self.add_argument('--word_embedding_size', type=int, default=512)
+        self.add_argument('--lstm_hidden_size', type=int, default=512)
+        self.add_argument('--att_hidden_size', type=int, default=512)
+        self.add_argument('--n_anchors', type=int, default=1)
+        self.add_argument('--word_cnt', type=int, default=20)
+
 
 def parse_args():
     parser = wsParamParser()

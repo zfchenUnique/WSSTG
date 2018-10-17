@@ -57,6 +57,14 @@ def draw_rectangle(img, bbox, color=(0,0,255), thickness=3):
             bbox['x2'],
             bbox['y2'],
         ]
+    bbox[0] = max(bbox[0], 0)
+    bbox[1] = max(bbox[1], 0)
+    bbox[0] = min(bbox[0], img.shape[1])
+    bbox[1] = min(bbox[1], img.shape[0])
+    bbox[2] = max(bbox[2], 0)
+    bbox[3] = max(bbox[3], 0)
+    bbox[2] = min(bbox[2], img.shape[1])
+    bbox[3] = min(bbox[3], img.shape[0])
     assert bbox[2] >= bbox[0]
     assert bbox[3] >= bbox[1]
     assert bbox[0] >= 0

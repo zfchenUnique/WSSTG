@@ -20,6 +20,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from wsParamParser import parse_args
+import random
 set_debugger()
 
 def spawn(f):
@@ -59,7 +60,7 @@ class vidInfoParser(object):
         self.jpg_folder = os.path.join(annFd, 'Data/VID/', set_name)
         self.info_lines = textread(self.tube_name_list_fn)
         self.set_name = set_name
-        self.tube_ann_list_fn = os.path.join(annFd, 'Data/VID/annSamples/', set_name + '_ann_list.txt')
+        self.tube_ann_list_fn = os.path.join(annFd, 'Data/VID/annSamples/', set_name + '_ann_list_v2.txt')
         ins_lines = textread(self.tube_ann_list_fn)
         ann_dict_set_dict = {}
         for line in ins_lines:
@@ -503,13 +504,55 @@ def statistic_im_prp():
         recall_list.append(recall_k)
     show_distribute_over_categories(recall_list, ann_list, thre_list)
 
+
+def vid_split_validation_test():
+    #pdb.set_trace()
+    # setting up random seed
+    seed_value =0
+    np.random.seed(seed_value) # cpu vars
+    random.seed(seed_value)
+
+    # file path
+    val_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2_ori.txt'
+    val_split_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2.txt'
+    test_split_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/test_ann_list_v2.txt'
+    val_list = textread(val_ann_list_fn)
+    file_num = len(val_list) 
+    per_list = np.random.permutation(file_num) 
+    
+    new_val_list = list()
+    new_test_list = list()
+
+    file_num_new_val = int(file_num/2)
+    new_val_list = [val_list[per_list[i]] for i in range(file_num_new_val) ]
+    new_test_list = [val_list[per_list[i]] for i in range(file_num_new_val, file_num) ]
+    
+    textdump(val_split_list_fn, new_val_list)
+    textdump(test_split_list_fn, new_test_list)
+
+def vid_txt_only():
+    train_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_ann_list_v2.txt'  
+    val_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2_ori.txt'
+    train_ann_list_fn_only = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_ann_list_v2_txt_only.txt'  
+    val_ann_list_fn_only = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2_txt_only.txt'
+
+    train_list = textread(train_ann_list_fn)
+    val_list = textread(val_ann_list_fn)
+
+    train_list_cap_only = [ txt_ele.split(',')[-1] for txt_ele in train_list]
+    val_list_cap_only = [ txt_ele.split(',')[-1] for txt_ele in val_list]
+    
+    textdump(train_ann_list_fn_only, train_list_cap_only)
+    textdump(val_ann_list_fn_only, val_list_cap_only)
+
+
 def vid_caption_processing():
     cap_folder = '/data1/zfchen/data/ILSVRC/capResults'
     train_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_valid_list.txt'  
     val_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_valid_list.txt'
-    ins_cap_list_fn = '/data1/zfchen/data/ILSVRC/capResults/instance_annoatation_list_v1_check.txt'
-    train_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_ann_list.txt'  
-    val_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list.txt'
+    ins_cap_list_fn = '/data1/zfchen/data/ILSVRC/capResults/instance_annoatation_list_v2_check.txt'
+    train_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_ann_list_v2.txt'  
+    val_ann_list_fn = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2.txt'
     
     train_list = textread(train_list_fn)    
     val_list = textread(val_list_fn)
@@ -533,6 +576,7 @@ def vid_caption_processing():
     textdump(val_ann_list_fn, val_ins_ann_list)
 
 def vid_valid_caption_preprocessing():
+    pdb.set_trace()
     cap_folder = '/data1/zfchen/data/ILSVRC/capResults'
     min_cap_length = 5
     dir_list = os.listdir(cap_folder)
@@ -599,7 +643,7 @@ def vid_valid_caption_preprocessing():
     key_list.sort()
     for i, ins_id in enumerate(key_list):
         list_for_write.append('%d, %s' %(ins_id, ann_dict_set_dict[ins_id][-1]))
-    out_fn = os.path.join(cap_folder, 'instance_annoatation_list_v1_2.txt')
+    out_fn = os.path.join(cap_folder, 'instance_annoatation_list_v2_1.txt')
     textdump(out_fn, list_for_write)
     print('finish preparing the annotation list')
 
@@ -616,7 +660,8 @@ def build_vid_word_list():
     ann_cap_path = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples'
     word_list  = list()
     for i, set_name in enumerate(set_name_list):
-        ann_cap_set_fn = os.path.join(ann_cap_path, set_name+'_ann_list.txt')
+        #ann_cap_set_fn = os.path.join(ann_cap_path, set_name+'_ann_list.txt')
+        ann_cap_set_fn = os.path.join(ann_cap_path, set_name+'_ann_list_v2.txt')
         cap_lines = textread(ann_cap_set_fn)
         for ii, line in enumerate(cap_lines):
             ins_id_str, caption = line.split(',', 1)
@@ -655,18 +700,21 @@ def get_h5_feature_dict(h5file_path):
     return img_prp_reader
 
 
-
-
 if __name__ == '__main__':
-    file_path = '/data1/zfchen/code/video_feature/feature_extraction/tmp/vid/val/0.h5'
-    out_dict = get_h5_feature_dict(file_path)
-    pdb.set_trace()
+    
+    
+    #vid_split_validation_test()
+    vid_txt_only()
+
+    #file_path = '/data1/zfchen/code/video_feature/feature_extraction/tmp/vid/val/0.h5'
+    #out_dict = get_h5_feature_dict(file_path)
+    #pdb.set_trace()
     #get_set_visual_feature_cache() 
     #vid_caption_processing()
     #vid_valid_caption_preprocessing()
     #statistic_im_prp()
     #vis_im_prp()
-    test_im_prp()
+    #test_im_prp()
     #pdb.set_trace()
 
 

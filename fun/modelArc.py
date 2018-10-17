@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
 from multiGraphAttention import *
 from netvlad import NetVLAD
+from classSST import *
 
 class wsEmb(nn.Module):
     def __init__(self, imEncoder, wordEncoder):
@@ -39,6 +40,10 @@ class wsEmb(nn.Module):
         if  self.wsMode == 'rankTube':
             imEnDis, wordEnDis = self.forwardRank(imDis, wordEmb, capLengths)
             return imEnDis, wordEnDis
+        
+        if  self.wsMode == 'coAtt':
+            simMM = self.forwardCoAtt(imDis, wordEmb, capLengths)
+            return simMM
 
     def forwardRank(self, imDis, wordEmb, capLengths):
         if self.vis_type =='fc':
@@ -54,6 +59,13 @@ class wsEmb(nn.Module):
         imEnDis = F.normalize(imEnDis, p=2, dim=1)
         wordEnDis = F.normalize(wordEnDis, p=2, dim=1)
         return imEnDis, wordEnDis
+
+    def forwardCoAtt(self, imDis, wordEmb, capLengths):
+        assert len(imDis.size())==3
+        assert len(wordEmb.size())==3
+        #pdb.set_trace()
+        simMM = self.imEncoder(imDis, wordEmb, capLengths)
+        return simMM
 
     def _initialize_weights(self):
         #pdb.set_trace()
@@ -165,12 +177,13 @@ class vlad_encoder(nn.Module):
         self.fc2 = torch.nn.Linear(centre_num*hidden_dim, out_dim)
 
     def forward(self, input_data):
-        #pdb.set_trace()
         input_hidden = self.fc1(input_data)
         input_hidden = F.relu(input_hidden)
         input_hidden = input_hidden.unsqueeze(dim=3)
         input_hidden = input_hidden.transpose(dim0=1, dim1=2)
+        #pdb.set_trace()
         input_vlad = self.net_vlad(input_hidden)
+        #pdb.set_trace()
         out_vlad = self.fc2(input_vlad)
         out_vlad = F.relu(out_vlad)
         return out_vlad
@@ -197,10 +210,13 @@ def build_vis_seq_encoder(opts):
         return vis_vlad_encoder
 
 def build_network(opts):
-    if opts.wsMode =='rankTube': 
+    if opts.wsMode == 'rankTube': 
         imEncoder= build_vis_seq_encoder(opts)
         wordEncoder = build_txt_encoder(opts)
         wsEncoder = wsEmb(imEncoder, wordEncoder)
+    elif opts.wsMode == 'coAtt':
+        sst_Obj = SST(opts)
+        wsEncoder = wsEmb(sst_Obj, None)
     wsEncoder.wsMode = opts.wsMode
     wsEncoder.vis_type = opts.vis_type
     if opts.gpu:

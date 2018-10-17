@@ -51,13 +51,18 @@ if __name__=='__main__':
                 imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                 resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, visRsFd, False)
+            if opt.wsMode =='coAtt':
+                simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
+                resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+'/val', True)
+        
         accSum = 0
         for ele in resultList:
             index, recall_k= ele
             accSum +=recall_k
         logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
     
-    if opt.eval_val_flag:
+    if opt.eval_test_flag:
         
         visRsFd = '../data/visResult/actNet/%s_test \n' %(os.path.basename(opt.initmodel))
         resultList = list()
@@ -84,6 +89,10 @@ if __name__=='__main__':
                 imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                 resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, visRsFd, False)
+            if opt.wsMode =='coAtt':
+                simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
+                resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+'/test', True)
 
         accSum = 0
         for ele in resultList:

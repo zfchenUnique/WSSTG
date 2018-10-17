@@ -89,7 +89,7 @@ def build_word_vec(word_list, model_word2vec):
                 print('%s is not the vocaburary'% word)
             except:
                 print('fail to print the word!')
-            #pdb.set_trace()
+            pdb.set_trace()
     return matrix_word2vec, igNoreList
 
 if __name__ == '__main__':
@@ -183,7 +183,7 @@ if __name__ == '__main__':
         pdb.set_trace()
 
         outDict = {'idx2word': idx2word, 'word2idx': word2idx, 'word2vec':  matrix_word2vec, 'out_voca': igNoreList}
-        pickledump(opt.dictOutPath+'_'+opt.setName+'.pd', outDict) 
+        pickledump(opt.dictOutPath+'_'+opt.setName+'_v2.pd', outDict) 
         print('Finish constructing dictionary for dataset: %s\n' %(opt.setName))
 
 
