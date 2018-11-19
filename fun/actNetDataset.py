@@ -42,7 +42,7 @@ class actNetDataloader(data.Dataset):
 
     def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, \
             pos_type='none', pos_emb_dim=64, vis_ftr_type='rgb', i3d_ftr_path='', \
-            use_mean_cache_flag=False, mean_cache_ftr_path=''):
+            use_mean_cache_flag=False, mean_cache_ftr_path='', frm_level_flag=False, frm_num=1):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
@@ -59,6 +59,8 @@ class actNetDataloader(data.Dataset):
         self.mean_cache_ftr_path = mean_cache_ftr_path
         
         self.tube_ftr_dim_i3d =1024 # 1024 for rgb, 1024 for flow
+        self.frm_level_flag = frm_level_flag
+        self.frm_num = frm_num
 
     def __len__(self):
 
@@ -83,7 +85,7 @@ class actNetDataloader(data.Dataset):
             wordEmbMatrix[valCount, :]= self.dict['word2vec'][idx]
             valCount +=1
             wordLbl.append(idx)
-        return wordEmbMatrix, valCount
+        return wordEmbMatrix, valCount, wordLbl
 
     def get_cap_emb_from_list(self, per_des_list, capNum):
         # get index
@@ -98,11 +100,62 @@ class actNetDataloader(data.Dataset):
         # get word embedding
         wordEmbMatrix= np.zeros((capNum, self.maxWordNum, 300), dtype=np.float32)
         cap_length_list = list()
+        word_lbl_list = list()
         for i, capIdx in enumerate(capIdxList):
             capString = per_des_list[capIdx]
-            wordEmbMatrix[i, ...], valid_length = self.get_word_emb_from_str(capString, self.maxWordNum)
+            wordEmbMatrix[i, ...], valid_length, wordLbl = self.get_word_emb_from_str(capString, self.maxWordNum)
             cap_length_list.append(valid_length)
-        return wordEmbMatrix, cap_length_list
+            word_lbl_list.append(wordLbl)
+        return wordEmbMatrix, cap_length_list, word_lbl_list
+
+
+    def get_frm_embedding(self, shotInfo, maxTubelegth, out_cached_folder = ''):
+        tube_embedding = np.zeros((self.rpNum, self.tube_ftr_dim), dtype=np.float32)
+        set_name = self.set_name_list[shotInfo[0]]
+        shot = self.ptdList[shotInfo[0]].shot(shotInfo[1])
+        tube_prp_path = os.path.join(self.tubePath, set_name, self.prp_type, str(shotInfo[1])+'.pd')
+        #pdb.set_trace()
+        tubeInfo = pickleload(tube_prp_path)
+
+        vd_name = shot.video_id
+        tube_list, frame_list = tubeInfo
+        prp_range_num = len(tube_list[0])
+        frmNum = len(frame_list)
+        if self.frm_num>0:
+            sample_index_list = random.sample(range(frmNum), self.frm_num)
+            #sample_index_list = random.sample(shot.annotated_frames, self.frm_num)
+        else:
+            sample_index_list = shot.annotated_frames
+        bbx_list = list()
+        frm_ftr_list = list()
+        output_index_list = list()
+        for i, frm_id in enumerate(sample_index_list):
+            if self.frm_num !=-1:
+                frmName = frame_list[i]
+            else:
+                frmName =  '%05d' %(frm_id)
+            #print()
+            for tmp_ftr_path  in self.ftrPath:
+                img_prp_ftr_info_path = os.path.join(tmp_ftr_path, 'v_'+ vd_name, frmName+ '.pd')
+                if os.path.isfile(img_prp_ftr_info_path):
+                    break
+            if not os.path.isfile(img_prp_ftr_info_path):
+                print('fail to find %s\n' %(img_prp_ftr_info_path))
+                #pdb.set_trace()
+                continue
+            output_index_list.append(frm_id) 
+            img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+            tmp_frm_ftr = img_prp_ftr_info['roiFtr'][:prp_range_num] 
+            frm_ftr_list.append(np.expand_dims(tmp_frm_ftr, axis=0))
+            tmp_bbx = copy.deepcopy(img_prp_ftr_info['rois'][:prp_range_num]) # to be modified
+            tmp_info = img_prp_ftr_info['imFo'].squeeze()
+            tmp_bbx[:, 0] = tmp_bbx[:, 0]/tmp_info[1]
+            tmp_bbx[:, 2] = tmp_bbx[:, 2]/tmp_info[1]
+            tmp_bbx[:, 1] = tmp_bbx[:, 1]/tmp_info[0]
+            tmp_bbx[:, 3] = tmp_bbx[:, 3]/tmp_info[0]
+            bbx_list.append(tmp_bbx)
+        frm_embedding = np.concatenate(frm_ftr_list, axis=0)
+        return frm_embedding, tubeInfo, output_index_list, bbx_list
 
 
     def get_tube_embedding(self, shotInfo, maxTubelegth, out_cached_folder = ''):
@@ -301,6 +354,48 @@ class actNetDataloader(data.Dataset):
             tubeInfo = pickleload(tube_prp_path)
         return tubeInfo, person_index
 
+
+    def get_visual_frm_item(self, indexOri):
+        #pdb.set_trace()
+        index = indexOri
+        sumInd = 0
+        tube_embedding = None
+        cap_embedding = None
+        person_index = None
+        cap_length_list = -1
+        for set_idx, ptd in enumerate(self.ptdList):
+            lghSet = len(ptd.people)
+            if index>=lghSet:
+                index -=lghSet
+                continue
+            
+            tBf = time.time() 
+            person_index = ptd.person(index+1)
+            #person_index = ptd.person(267)
+            per_des_list = [d.description.encode('utf-8') for d in person_index.descriptions]
+            cap_embedding, cap_length_list, word_lbl_list = self.get_cap_emb_from_list(per_des_list, self.capNum)
+            tAf = time.time() 
+            #print('caption: %d, %f\n'%(indexOri, tAf-tBf))
+            # get visual tube embedding 
+            shot_id = person_index.shot.id
+            cache_str_shot_str = str(set_idx) +'_' + str(shot_id)
+            tube_embedding_list = list()
+            tAf2 = time.time()
+            
+            tube_embedding, tubeInfo, frm_idx, bbx_list  = self.get_frm_embedding([set_idx, shot_id], self.maxTubelegth, self.out_cache_folder)
+            tube_embedding = torch.FloatTensor(tube_embedding)
+
+            #pdb.set_trace()
+            if self.pos_type !='none':
+                tp1 = time.time() 
+                tube_embedding_pos = self.get_tube_pos_embedding(tubeInfo, tube_length=self.maxTubelegth, \
+                    feat_dim=self.pos_emb_dim, feat_type=self.pos_type)
+                tp2 = time.time()
+                tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
+
+        return tube_embedding, cap_embedding, tubeInfo, person_index, cap_length_list, shot_id, word_lbl_list, frm_idx, bbx_list
+
+
     def get_visual_item(self, indexOri):
         #pdb.set_trace()
         index = indexOri
@@ -318,7 +413,7 @@ class actNetDataloader(data.Dataset):
             tBf = time.time() 
             person_index = ptd.person(index+1)
             per_des_list = [d.description.encode('utf-8') for d in person_index.descriptions]
-            cap_embedding, cap_length_list = self.get_cap_emb_from_list(per_des_list, self.capNum)
+            cap_embedding, cap_length_list, word_lbl_list = self.get_cap_emb_from_list(per_des_list, self.capNum)
             tAf = time.time() 
             #print('caption: %d, %f\n'%(indexOri, tAf-tBf))
             # get visual tube embedding 
@@ -409,10 +504,13 @@ class actNetDataloader(data.Dataset):
             elif self.cache_ftr_dict_flag and self.vis_ftr_type=='i3d':
                 self.cache_ftr_dict[cache_str_shot_str] = [tube_embedding, tubeInfo]
             break
-        return tube_embedding, cap_embedding, tubeInfo, person_index, cap_length_list, shot_id
+        return tube_embedding, cap_embedding, tubeInfo, person_index, cap_length_list, shot_id, word_lbl_list
 
     def __getitem__(self, index):
-        return self.get_visual_item( index)                
+        if not self.frm_level_flag:
+            return self.get_visual_item( index)                
+        else:
+            return self.get_visual_frm_item(index)                
 
 def dis_collate_actNet(batch):
     ftr_tube_list = list()
@@ -421,7 +519,10 @@ def dis_collate_actNet(batch):
     person_list = list()
     cap_length_list = list()
     shot_list = list()
+    word_lbl_list = list()
     max_length = 0
+    frm_idx_list = list()
+    bbx_list = list()
     for sample in batch:
         ftr_tube_list.append(sample[0])
         ftr_cap_list.append(torch.FloatTensor(sample[1]))
@@ -433,10 +534,20 @@ def dis_collate_actNet(batch):
             if(tmp_length>max_length):
                 max_length = tmp_length
             cap_length_list.append(tmp_length)
+        word_lbl_list.append(sample[6])
+        
+        if len(sample)>7:
+   #         pdb.set_trace()
+            frm_idx_list.append(sample[7])
+            bbx_list.append(sample[8])
     
     capMatrix = torch.stack(ftr_cap_list, 0)
     capMatrix = capMatrix[:, :max_length, :]
-    return torch.stack(ftr_tube_list, 0), capMatrix, prp_tube_list, person_list, cap_length_list, shot_list
+    if len(frm_idx_list)>0:
+        return torch.stack(ftr_tube_list, 0), capMatrix, prp_tube_list, person_list, cap_length_list, shot_list, word_lbl_list, frm_idx_list, bbx_list
+    else:
+        return torch.stack(ftr_tube_list, 0), capMatrix, prp_tube_list, person_list, cap_length_list, shot_list, word_lbl_list
+
 
 if __name__=='__main__':
     opt = parse_args()

@@ -13,6 +13,7 @@ class lossEvaluator(nn.Module):
         self.keepKeyFrameOnly = keepKeyFrameOnly
 
     def forward(self, imFtr, disFtr, lblList):
+
         if not self.lossWFlag:
             loss = self.forwardRank(imFtr, disFtr, lblList)
         else:

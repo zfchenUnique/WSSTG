@@ -31,7 +31,7 @@ class wsParamParser(BaseParser):
         self.add_argument('--vwFlag', action='store_true', default=False)
         self.add_argument('--wsMode', default='rank', type=str)
         self.add_argument('--hdSize', default=128, type=int)
-        self.add_argument('--vocaSize', default=1312, type=int)
+        self.add_argument('--vocaSize', default=1900, type=int)
         self.add_argument('--conSecFlag', action='store_true', default=False)
         self.add_argument('--conFrmNum', default=9, type=int)
         self.add_argument('--moduleNum', default=2, type=int)
@@ -75,6 +75,11 @@ class wsParamParser(BaseParser):
         self.add_argument('--att_hidden_size', type=int, default=512)
         self.add_argument('--n_anchors', type=int, default=1)
         self.add_argument('--word_cnt', type=int, default=20)
+        self.add_argument('--context_flag', action='store_true', default=False)
+        self.add_argument('--no_shuffle_flag', action='store_true', default=False)
+        self.add_argument('--frm_level_flag', action='store_true', default=False)
+        self.add_argument('--frm_num', type=int, default=1)
+        self.add_argument('--att_exp', type=int, default=1)
 
 
 def parse_args():
@@ -91,11 +96,24 @@ def parse_args():
     if args.entropy_regu_flag:
         struct_ann = struct_ann + '_lamda2_' + str(args.lamda2*10)
 
-    struct_ann = struct_ann + '_margin_'+ str(args.margin*10)
+    struct_ann = struct_ann + '_margin_'+ str(args.margin*10)+ '_att_exp' + str(args.att_exp)
 
     if args.vis_type =='vlad_v1':
         struct_ann = struct_ann + '_centre_' + str(args.centre_num) \
                 + '_hidden_dim_' + str(args.hidden_dim)
+    
+    if args.context_flag:
+        struct_ann = struct_ann + '_context'
+
+    if args.wsMode == 'coAtt' or args.wsMode == 'coAttGroundR':
+        struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) 
+
+    if args.frm_level_flag:
+        struct_ann = struct_ann + '_frm_level_'
+
+    if args.lossW:
+        struct_ann = struct_ann + 'weak_weight_'+str(args.lamda*10)
+
 
 
     args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
@@ -115,4 +133,5 @@ def parse_args():
             + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) +'_' + \
             half_size +'_txt_'+ str(args.txt_type) + '_' + str(args.vis_ftr_type) + '_lr_' + \
             str(args.lr*100000) + '_' + str(args.dbSet) + struct_ann
+    args.visRsFd = args.visRsFd + args.dbSet + '_'
     return args

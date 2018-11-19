@@ -1,3 +1,16 @@
+import numpy 
+import torch
+import random
+def random_seeding(seed_value, use_cuda):
+    numpy.random.seed(seed_value) # cpu vars
+    torch.manual_seed(seed_value) # cpu  vars
+    random.seed(seed_value)
+    if use_cuda: 
+        torch.cuda.manual_seed_all(seed_value) # gpu vars
+
+seed_value = 1
+random_seeding(seed_value, True)
+
 from wsParamParser import parse_args
 from data.data_loader  import* 
 from datasetLoader import *
@@ -18,24 +31,26 @@ if __name__=='__main__':
     # build network 
     model = build_network(opt)
     # build_optimizer
-    optimizer = build_opt(opt,  model)
-    # build loss layer
-    lossEster = build_lossEval(opt)
     # build logger
     logger = logInF(opt.logFd)
-
+    ep = 0
+    thre_list = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    #thre_list = [0.5]
+    #thre_list = [0.5, 0.7]
+    acc_list = list()
+    for thre in thre_list:
+        acc_list.append([])
+    
     if opt.eval_val_flag:
-                
-        visRsFd = '../data/visResult/actNet/%s_val \n' %(os.path.basename(opt.initmodel))
         model.eval()
         resultList = list()
         vIdList = list()
+        cap_num_ori = opt.capNum
         opt.set_name = 'val'
         opt.capNum = 5
         dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
-        #pdb.set_trace()
         for itr_eval, inputData in enumerate(dataLoaderEval):
-            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list = inputData
+            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list = inputData
             dataIdx = None
             #pdb.set_trace()
             b_size = tube_embedding.shape[0]
@@ -50,30 +65,51 @@ if __name__=='__main__':
                 imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
                 imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
-                resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, visRsFd, False)
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
+
             if opt.wsMode =='coAtt':
                 simMM = model(imDis, wordEmb, cap_length_list)
                 simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
-                resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+'/val', True)
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
+            
+            if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
+                tmp_bsize = b_size
+                imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                #pdb.set_trace()
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
         
-        accSum = 0
-        for ele in resultList:
-            index, recall_k= ele
-            accSum +=recall_k
-        logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
-    
+        for i, thre in enumerate(thre_list):
+            resultList = acc_list[i]
+            accSum = 0
+            for ele in resultList:
+                index, recall_k= ele
+                accSum +=recall_k
+            logger('thre @ %f, Average accuracy on validation set is %3f\n' %(thre, accSum/len(resultList)))
+
+    acc_list = list()
+    for thre in thre_list:
+        acc_list.append([])
+        # testing on testing set
     if opt.eval_test_flag:
-        
-        visRsFd = '../data/visResult/actNet/%s_test \n' %(os.path.basename(opt.initmodel))
+        model.eval()
         resultList = list()
         vIdList = list()
-        set_name_ori= opt.set_name
         opt.set_name = 'test'
         opt.capNum = 5
+        if opt.wsMode =='coAtt':
+            opt.capNum = 1
         dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
         #pdb.set_trace()
         for itr_eval, inputData in enumerate(dataLoaderEval):
-            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list = inputData
+            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list = inputData
+            #pdb.set_trace()
             dataIdx = None
             #pdb.set_trace()
             b_size = tube_embedding.shape[0]
@@ -88,15 +124,29 @@ if __name__=='__main__':
                 imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
                 imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
-                resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, visRsFd, False)
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
+
             if opt.wsMode =='coAtt':
                 simMM = model(imDis, wordEmb, cap_length_list)
                 simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
-                resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+'/test', True)
-
-        accSum = 0
-        for ele in resultList:
-            index, recall_k= ele
-            accSum +=recall_k
-        logger('Average accuracy on testing set is %3f\n' %(accSum/len(resultList)))
-
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
+            if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
+                tmp_bsize = b_size
+                imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                for i, thre in enumerate(thre_list):
+                    acc_list[i] += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False, thre_list=[thre])
+        
+        for i, thre in enumerate(thre_list):
+            resultList = acc_list[i]
+            accSum = 0
+            for ele in resultList:
+                index, recall_k= ele
+                accSum +=recall_k
+            logger('thre @ %f, Average accuracy on testing set is %3f\n' %(thre, accSum/len(resultList)))
+        

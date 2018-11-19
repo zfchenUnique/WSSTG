@@ -37,11 +37,12 @@ if __name__=='__main__':
     # build logger
     logger = logInF(opt.logFd)
     writer = SummaryWriter(opt.logFdTx+time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    
     for ep in range(opt.stEp, opt.epSize):
         resultList_full = list()
         tBf = time.time()
         for itr, inputData in enumerate(dataLoader):
-            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list  = inputData
+            tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list, frm_idx_list, bbx_list  = inputData
             tDf = time.time()
             #print(shot_list)
             #print(cap_length_list)
@@ -50,33 +51,17 @@ if __name__=='__main__':
             dataIdx = None
             tmp_bsize = tube_embedding.shape[0]
             imDis = tube_embedding.cuda()
-            imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
+            #imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
             wordEmb = cap_embedding.cuda()
             wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
-
-            if opt.wsMode=='rankTube':
-#                pdb.set_trace()
+            
+            if opt.wsMode=='rankFrm':
+                imDis = imDis.view(-1, 1, imDis.size(3))
                 imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
                 imFtr = imFtr.view(tmp_bsize, -1, opt.dim_ftr)
                 txtFtr = txtFtr.view(tmp_bsize, -1, opt.dim_ftr)
 #                pdb.set_trace()
-                #tDf2 = time.time()
                 loss = lossEster(imFtr, txtFtr, shot_list)
-                #tDf3 = time.time()
-                #print(tDf3-tDf2)
-            if opt.wsMode =='coAtt':
-                simMM = model(imDis, wordEmb, cap_length_list)
-                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
-                loss = lossEster(simMM=simMM, lblList =shot_list)
-            
-            if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
-                imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
-                wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
-                logMat, simMM = model(imDis, wordEmb, cap_length_list)
-                simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
-                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
-                #pdb.set_trace()
-                loss = lossEster(logMat, word_lbl_list, simMM, shot_list)
 
             if loss<=0:
                 continue
@@ -89,12 +74,8 @@ if __name__=='__main__':
                 logger('Ep: %d, Iter: %d, T1: %3f, T2:%3f, loss: %3f\n' %(ep, itr, (tDf-tBf), (tAf-tBf),  float(loss.data.cpu().numpy())))
                 writer.add_scalar('loss', loss.data.cpu()[0], ep*len(datasetOri)+itr*opt.batchSize)
                 resultList = list()
-                if opt.wsMode=='rankTube':
-                    resultList = evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                elif opt.wsMode=='coAtt':
-                    resultList = evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                elif opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
-                    resultList = evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
+                if opt.wsMode=='rankFrm':
+                    resultList = evalAcc_actNet_frm(imFtr, txtFtr, tube_info_list, person_list, datasetOri.jpg_folder, frm_idx_list, bbx_list, opt.visRsFd+str(ep), False)
                 resultList_full +=resultList
                 accSum = 0
                 for ele in resultList:
@@ -103,9 +84,8 @@ if __name__=='__main__':
                     accSum +=recall_k
                 logger('Average accuracy on training batch is %3f\n' %(accSum/(len(resultList)+0.000001)))
         ## evaluation within an epoch
-            #pdb.set_trace()
             tBf = time.time()
-            if(ep % opt.saveEp==0 and itr==0 and ep>-1):
+            if(ep % opt.saveEp==0 and itr==0 and ep>0):
 #                pdb.set_trace()
                 checkName = opt.outPre+'_ep_'+str(ep) +'_itr_'+str(itr)+'.pth'
                 save_check_point(model.state_dict(), file_name=checkName)
@@ -114,44 +94,33 @@ if __name__=='__main__':
                 vIdList = list()
                 set_name_ori= opt.set_name
                 cap_num_ori = opt.capNum
+                batch_size_ori    = opt.batchSize 
                 opt.set_name = 'val'
                 opt.capNum = 5
-                if opt.wsMode =='coAtt':
-                    opt.capNum = 1
+                opt.frm_num = -1
+                opt.batchSize = 1
+                opt.no_shuffle_flag =True
+                
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
+                opt.batchSize = batch_size_ori
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
-                    tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list = inputData
+                    tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list, frm_idx_list, bbx_list  = inputData
                     dataIdx = None
                     #pdb.set_trace()
-                    b_size = tube_embedding.shape[0]
+                    b_size = tube_embedding.shape[1]
                     # B*P*T*D
                     imDis = tube_embedding.cuda()
-                    imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
                     wordEmb = cap_embedding.cuda()
                     wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
                     imDis.requires_grad=False
                     wordEmb.requires_grad=False
-                    if opt.wsMode=='rankTube':
+                    if opt.wsMode=='rankFrm':
+                        imDis = imDis.view(-1, 1, imDis.size(3))
                         imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
-                        txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
-                        resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False)
-
-                    if opt.wsMode =='coAtt':
-                        simMM = model(imDis, wordEmb, cap_length_list)
-                        simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
-                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                    
-                    if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
-                        tmp_bsize = b_size
-                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
-                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
-                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
-                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
-                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
-                        #pdb.set_trace()
-                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
+                        txtFtr = txtFtr.view(1, -1, opt.dim_ftr)
+                        resultList += evalAcc_actNet_frm_tube(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, frm_idx_list, bbx_list, opt.visRsFd+str(ep), False)
                  
                 accSum = 0
                 for ele in resultList:
@@ -159,50 +128,45 @@ if __name__=='__main__':
                     accSum +=recall_k
                 logger('Average accuracy on validation set is %3f\n' %(accSum/len(resultList)))
                 writer.add_scalar('Average validation accuracy', accSum/len(resultList), ep*len(datasetOri)+ itr*opt.batchSize)
-                #pdb.set_trace()
+                model.train()
+                opt.set_name = set_name_ori
+                opt.capNum = cap_num_ori
+            
+            
+            if(ep % opt.saveEp==0 and itr==0 and ep>0):
                 # testing on testing set
                 resultList = list()
                 vIdList = list()
                 set_name_ori= opt.set_name
+                cap_num_ori = opt.capNum
+                batch_size_ori    = opt.batchSize 
                 opt.set_name = 'test'
                 opt.capNum = 5
-                if opt.wsMode =='coAtt':
-                    opt.capNum = 1          # for memory issue
+                opt.frm_num = -1
+                opt.batchSize = 1
+                opt.no_shuffle_flag =True
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
+                opt.batchSize = batch_size_ori
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
-                    tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list = inputData
+                    tube_embedding, cap_embedding, tube_info_list, person_list, cap_length_list, shot_list, word_lbl_list, frm_idx_list, bbx_list  = inputData
                     #pdb.set_trace()
                     dataIdx = None
                     #pdb.set_trace()
-                    b_size = tube_embedding.shape[0]
+                    b_size = tube_embedding.shape[1]
                     # B*P*T*D
                     imDis = tube_embedding.cuda()
-                    imDis = imDis.view(-1, imDis.shape[2], imDis.shape[3])
                     wordEmb = cap_embedding.cuda()
                     wordEmb = wordEmb.view(-1, wordEmb.shape[2], wordEmb.shape[3])
                     imDis.requires_grad=False
                     wordEmb.requires_grad=False
-                    if opt.wsMode=='rankTube':
+                    if opt.wsMode=='rankFrm':
+                        imDis = imDis.view(-1, 1, imDis.size(3))
                         imFtr, txtFtr = model(imDis, wordEmb, cap_length_list)
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
-                        txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
-                        resultList += evalAcc_actNet(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, opt.visRsFd+str(ep), False)
+                        txtFtr = txtFtr.view(1, -1, opt.dim_ftr)
+                        resultList += evalAcc_actNet_frm_tube(imFtr, txtFtr, tube_info_list, person_list, datasetEvalOri.jpg_folder, frm_idx_list, bbx_list, opt.visRsFd+str(ep), False)
 
-                    if opt.wsMode =='coAtt':
-                        simMM = model(imDis, wordEmb, cap_length_list)
-                        simMM = simMM.view(b_size, opt.rpNum, b_size, opt.capNum)            
-                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                
-                    if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
-                        tmp_bsize = b_size
-                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
-                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
-                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
-                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
-                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
-                        resultList += evalAcc_actNet_att(simMM, tube_info_list, person_list, datasetOri.jpg_folder, opt.visRsFd+str(ep), False)
-                
                 
                 accSum = 0
                 for ele in resultList:

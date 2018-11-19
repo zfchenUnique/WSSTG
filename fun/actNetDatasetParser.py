@@ -434,6 +434,24 @@ def check_bad_shots():
         print('%s, %d, %d, %d' %(set_name, shot_id, shot.first_frame, shot.last_frame))
         pdb.set_trace()
 
+def check_str_Val():
+    txtPath =''
+
+def caption_to_txt_file():
+    txtPre = '../annotations/txt'
+    set_list = ['train', 'val', 'test']
+    des_list = list()
+    for set_name in set_list:
+        ptd = PTD(set_name)
+        descriptions_list = ptd.descriptions
+        for disId, disInfo in enumerate(descriptions_list):
+            des_str = ptd.description(disId+1).description.encode('utf-8')
+            wordList = capiton_to_word_list(des_str)
+            #pdb.set_trace()
+            des_list +=wordList
+    des_list = list(set(des_list))
+    return des_list
+
 
 if __name__ == '__main__':
     extract_video_tube_actNet()

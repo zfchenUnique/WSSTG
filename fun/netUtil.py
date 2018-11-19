@@ -16,6 +16,24 @@ def visTube_from_image(frmList, tube, outName):
         image_list.append(img)
         images2video(image_list, 10, outName)
 
+def vis_image_bbx(frmList, tube, color=(0,0,255), thickness=3, dotted=False):
+    image_list   = list()
+    for i, bbx in enumerate(tube):
+        imName = frmList[i]
+        img = draw_rectangle(imName, bbx, color, thickness, dotted)
+        image_list.append(img)
+    return image_list
+
+def vis_gray_but_bbx(frmList, tube):
+    image_list   = list()
+    for i, bbx in enumerate(tube):
+        imName = frmList[i]
+        img = gray_background(imName, bbx)
+        image_list.append(img)
+    return image_list
+
+
+
 KEYS = ['x1', 'y1', 'x2', 'y2']
 def compute_IoU(box1, box2):
     if isinstance(box1, list):

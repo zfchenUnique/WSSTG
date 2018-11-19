@@ -21,7 +21,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from wsParamParser import parse_args
 import random
+import operator
+from nltk.corpus import stopwords
 set_debugger()
+from fun.datasetLoader import *
+import math
 
 def spawn(f):
     def fun(pipe,x):
@@ -61,6 +65,7 @@ class vidInfoParser(object):
         self.info_lines = textread(self.tube_name_list_fn)
         self.set_name = set_name
         self.tube_ann_list_fn = os.path.join(annFd, 'Data/VID/annSamples/', set_name + '_ann_list_v2.txt')
+        #pdb.set_trace()
         ins_lines = textread(self.tube_ann_list_fn)
         ann_dict_set_dict = {}
         for line in ins_lines:
@@ -174,10 +179,11 @@ def resize_tube_bbx(tube_vis, frmImList_vis):
         tube_vis[prpId][3] = tube_vis[prpId][3]*h
     return tube_vis
 
-def evaluate_tube_recall_vid(shot_proposals, vid_parser, tube_index, thre=0.5 ,topKOri=20):
+def evaluate_tube_recall_vid(shot_proposals, vid_parser, tube_index, thre=0.5 ,topKOri=20, more_detailed_flag=False):
+    #pdb.set_trace()
     topK = min(topKOri, len(shot_proposals[0][0]))
     recall_k = [0.0] * (topK + 1)
-   
+    iou_list = list()
     ann, vid_name = vid_parser.get_shot_anno_from_index(tube_index) 
     boxes = {}
     for i, ann_frame in enumerate(ann['track']):
@@ -191,7 +197,7 @@ def evaluate_tube_recall_vid(shot_proposals, vid_parser, tube_index, thre=0.5 ,t
         keyName = '%06d' %(frame_ind-1)
         boxes[keyName] = box
 
-    #pdb.set_trace()
+#    pdb.set_trace()
     tube_list, frame_list = shot_proposals
     assert(len(tube_list[0][0])== len(frame_list))
     is_instance_annotated = False
@@ -210,11 +216,18 @@ def evaluate_tube_recall_vid(shot_proposals, vid_parser, tube_index, thre=0.5 ,t
         #pdb.set_trace()
         ol = compute_LS(tube_key_bbxList, boxes) 
         if ol < thre:
+            if more_detailed_flag:
+                iou_list.append(ol)
             continue
         else:
             recall_k[i+1] += 1.0
             is_instance_annotated = True
-    return recall_k
+            if more_detailed_flag:
+                iou_list.append(ol)
+    if more_detailed_flag:
+        return recall_k, iou_list
+    else:
+        return recall_k
 
 def multi_process_connect_tubes(param_list):
     tube_index, tube_save_path, prp_num, tube_model_name, connect_w, set_name, annFd, vid_parser = param_list
@@ -539,8 +552,8 @@ def vid_txt_only():
     train_list = textread(train_ann_list_fn)
     val_list = textread(val_ann_list_fn)
 
-    train_list_cap_only = [ txt_ele.split(',')[-1] for txt_ele in train_list]
-    val_list_cap_only = [ txt_ele.split(',')[-1] for txt_ele in val_list]
+    train_list_cap_only = [ txt_ele.split(',', 1)[1] for txt_ele in train_list]
+    val_list_cap_only = [ txt_ele.split(',', 1)[1] for txt_ele in val_list]
     
     textdump(train_ann_list_fn_only, train_list_cap_only)
     textdump(val_ann_list_fn_only, val_list_cap_only)
@@ -656,7 +669,7 @@ def caption_to_word_list(des_str):
     return split_carefully(des_str.lower().replace('_', ' ').replace('.', '').replace(',', '').replace("\'", '').replace('-', '').replace('\n', '').replace('\r', '').replace('\"', '').rstrip().replace("\\",'').replace('?', '').replace('/','').replace('#','').replace('(', '').replace(')','').replace(';','').replace('!', '').replace('/',''), ' ')
 
 def build_vid_word_list():
-    set_name_list = ['train', 'val']
+    set_name_list = ['train', 'val', 'test']
     ann_cap_path = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples'
     word_list  = list()
     for i, set_name in enumerate(set_name_list):
@@ -670,6 +683,239 @@ def build_vid_word_list():
     word_list= list(set(word_list))
     return word_list 
 
+
+
+def statistic_vid_word_list():
+    set_name_list = ['train', 'val', 'test']
+    ann_cap_path = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples'
+    word_list  = list()
+    cap_num = 0
+    for i, set_name in enumerate(set_name_list):
+        #ann_cap_set_fn = os.path.join(ann_cap_path, set_name+'_ann_list.txt')
+        ann_cap_set_fn = os.path.join(ann_cap_path, set_name+'_ann_list_v2.txt')
+        cap_lines = textread(ann_cap_set_fn)
+        for ii, line in enumerate(cap_lines):
+            ins_id_str, caption = line.split(',', 1)
+            word_list_tmp = caption_to_word_list(caption)
+            while '' in word_list_tmp:
+                word_list_tmp.remove('')
+                #pdb.set_trace()
+            word_list += word_list_tmp
+            cap_num +=1
+    print('Average word length: %f\n'%(len(word_list)*1.0/cap_num)) 
+    print('total word number: %f\n'%(len(word_list))) 
+    word_dict = list(set(word_list))
+    print('word in dictionary: %f\n'%(len(word_dict)*1.0))
+    
+    # get frequence
+    word_to_dict ={}
+    for i, word in enumerate(word_list):
+        if word in word_to_dict.keys():
+            word_to_dict[word] +=1
+        else:
+            word_to_dict[word] =1
+    sorted_word = sorted(word_to_dict.items(), key=operator.itemgetter(1))
+    
+    sorted_word.reverse()
+    
+    
+    
+    topK = 30
+    plot_data =[]
+    cat_name = []
+    data_fn = 'word_noun.pdf'
+    count_num = 0
+    for i in range(len(sorted_word)):
+        if sorted_word[i][0] not in stopwords.words("english"):
+            print(sorted_word[i])
+            plot_data.append(sorted_word[i][1])
+            cat_name.append(sorted_word[i][0])
+            count_num +=1
+        if count_num>=topK:
+            break
+    #pdb.set_trace()
+    plot_data.reverse()
+    cat_name.reverse()
+    plot_distribution_word_ori(plot_data, cat_name, data_fn,rot=30, fsize=110)
+    #pdb.set_trace()
+    return word_list
+
+def plot_distribution_word_ori(data_plot, cat_list, bar_name, rot=90, fsize=8):
+    plt.close()
+    #fig, ax = plt.subplots(figsize=(12, 12))
+    fig = plt.figure(figsize=(180, 50))
+    #fig = plt.figure()
+    #frame = plt.gca()
+    width =1.0
+    ind = np.linspace(0, 1.3*(len(cat_list)-1), len(cat_list))
+    plt.xticks(np.arange(0, ind[-1]+1))
+    plt.bar(ind, data_plot, width)
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_color('none')
+    ax.spines['right'].set_color('none')
+    plt.yscale('log') 
+    ax.set_xlim([0-width, ind[-1]+width])
+    plt.ylabel("Count",fontsize=fsize, weight='bold')
+    plt.yticks(fontsize=fsize, weight='bold')
+    #plt.yticks(np.arange(100,1400, 100), fontsize=fsize)
+    plt.xticks(ind, cat_list, rotation=rot, fontsize=fsize, weight='bold', ha='right' )
+    for a,b in zip(list(ind),data_plot):  
+         plt.text(a, b+0.05, '%d' % b, ha='center', va= 'bottom',fontsize=fsize, weight='bold') 
+    plt.savefig(bar_name)
+    plt.show()
+
+
+
+def plot_distribution_word(data_plot, cat_list, bar_name, rot=90, fsize=8):
+    plt.close()
+    #fig, ax = plt.subplots(figsize=(12, 12))
+    fig = plt.figure(figsize=(120, 60))
+    #fig = plt.figure()
+    #frame = plt.gca()
+    plt.bar(range(len(cat_list)), data_plot)
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_color('none')
+    ax.spines['right'].set_color('none')
+    plt.yscale('log') 
+    #plt.ylabel("Count",fontsize=fsize)
+    plt.yticks(fontsize=fsize, weight='bold')
+    #plt.yticks(np.arange(100,1400, 100), fontsize=fsize)
+    plt.xticks(range(len(cat_list)), cat_list, rotation=rot, fontsize=fsize, weight='bold' )
+    for a,b in zip(range(len(cat_list)),data_plot):  
+         plt.text(a, b+0.05, '%d' % b, ha='center', va= 'bottom',fontsize=fsize, weight='bold') 
+    plt.savefig(bar_name)
+    plt.show()
+
+
+def show_cat_distribution():
+    set_name_list = ['train', 'val', 'test']
+    #set_name_list = ['test']
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    cat_name_dict ={}
+    #cache_fn = 'cat_cache.pk'
+    cache_fn = 'cat_cache_new.pk'
+    if os.path.isfile(cache_fn):
+        cat_name_dict = pickleload(cache_fn)
+    else:
+        for set_id, set_name in enumerate(set_name_list):
+            opt.set_name = set_name
+            data_loader, dataset = build_dataloader(opt)
+            set_length = len(dataset)
+            for ins_id in range(set_length):
+                index = dataset.use_key_index[ins_id]
+                ann, vd_name = dataset.vid_parser.get_shot_anno_from_index(index)
+                class_id =  str(ann['track'][0]['class'])
+                #if class_id=='domestic_cat':
+                #if class_id=='airplane':
+                #if class_id=='bicycle':
+                #if class_id=='zebra':
+                #if class_id=='motorcycle':
+                #if class_id=='elephant':
+                #if class_id=='bear':
+                #if class_id=='bird':
+                if class_id=='watercraft':
+                    print(class_id)
+                    print(index)
+                    pdb.set_trace()
+                if class_id  in cat_name_dict.keys():
+                    cat_name_dict[class_id] +=1
+                else:
+                    cat_name_dict[class_id] =1
+       
+        pickledump(cache_fn, cat_name_dict)
+    
+    sorted_cat = sorted(cat_name_dict.items(), key=operator.itemgetter(1))
+    #sorted_cat.reverse()
+    cat_name_list = []
+    count_list = []
+    for idx in range(len(sorted_cat)):
+        class_id=sorted_cat[idx][0]
+        cat_name_list.append(class_id)
+        count_list.append(cat_name_dict[class_id])
+    for i, cat_name in enumerate(cat_name_list):
+        if cat_name=='domestic_cat':
+            cat_name_list[i] = 'cat'
+        if cat_name=='giant_panda':
+            #cat_name_list[i] = 'giant panda'
+            cat_name_list[i] = 'panda'
+        if cat_name=='red_panda':
+            cat_name_list[i] = 'red panda'
+    data_fn = 'cat_noun_25_log.pdf'
+    #data_fn = 'cat_noun_25_symlog.pdf'
+    plot_distribution_cat(count_list, cat_name_list, data_fn, 25, fsize=120)
+    #plot_distribution_cat_log_log(count_list, cat_name_list, data_fn, 30, fsize=120)
+    #data_fn = 'cat_noun_25_linear.pdf'
+    #plot_distribution_cat_linear(count_list, cat_name_list, data_fn, 30, fsize=120)
+    print(cat_name_dict)
+
+
+def plot_distribution_cat(data_plot, cat_list, bar_name, rot=90, fsize=8):
+    plt.close()
+    #fig, ax = plt.subplots(figsize=(12, 12))
+    fig = plt.figure(figsize=(180, 50))
+    #fig = plt.figure()
+    #frame = plt.gca()
+    width =1.0
+    ind = np.linspace(0, 1.3*(len(cat_list)-1), len(cat_list))
+    plt.xticks(np.arange(0, ind[-1]+1))
+    plt.bar(ind, data_plot, width)
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_color('none')
+    ax.spines['right'].set_color('none')
+    plt.yscale('log') 
+    ax.set_xlim([0-width, ind[-1]+width])
+    plt.ylabel("Count",fontsize=fsize, weight='bold')
+    plt.yticks(fontsize=fsize, weight='bold')
+    #plt.yticks(np.arange(100,1400, 100), fontsize=fsize)
+    plt.xticks(ind, cat_list, rotation=rot, fontsize=fsize, weight='bold', ha='right' )
+    for a,b in zip(list(ind),data_plot):  
+         plt.text(a, b+0.05, '%d' % b, ha='center', va= 'bottom',fontsize=fsize, weight='bold') 
+    plt.savefig(bar_name)
+    plt.show()
+
+
+def plot_distribution_cat_log_log(data_plot, cat_list, bar_name, rot=90, fsize=8):
+    plt.close()
+    #fig, ax = plt.subplots(figsize=(12, 12))
+    fig = plt.figure(figsize=(180, 55))
+    #fig = plt.figure()
+    #frame = plt.gca()
+    plt.bar(range(len(cat_list)), data_plot)
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_color('none')
+    ax.spines['right'].set_color('none')
+    plt.yscale('symlog') 
+    #plt.ylabel("Count",fontsize=fsize)
+    plt.yticks(fontsize=fsize, weight='bold')
+    #plt.yticks(np.arange(100,1400, 100), fontsize=fsize)
+    plt.xticks(range(len(cat_list)), cat_list, rotation=rot, fontsize=fsize, weight='bold' )
+    for a,b in zip(range(len(cat_list)),data_plot):  
+         plt.text(a, b+0.05, '%d' % b, ha='center', va= 'bottom',fontsize=fsize, weight='bold') 
+    plt.savefig(bar_name)
+    plt.show()
+
+
+def plot_distribution_cat_linear(data_plot, cat_list, bar_name, rot=90, fsize=8):
+    plt.close()
+    #fig, ax = plt.subplots(figsize=(12, 12))
+    fig = plt.figure(figsize=(180, 55))
+    #fig = plt.figure()
+    #frame = plt.gca()
+    plt.bar(range(len(cat_list)), data_plot)
+    ax = fig.add_subplot(111)
+    ax.spines['top'].set_color('none')
+    ax.spines['right'].set_color('none')
+    #plt.yscale('symlog') 
+    #plt.ylabel("Count",fontsize=fsize)
+    plt.yticks(fontsize=fsize, weight='bold')
+    #plt.yticks(np.arange(100,1400, 100), fontsize=fsize)
+    plt.xticks(range(len(cat_list)), cat_list, rotation=rot, fontsize=fsize, weight='bold' )
+    for a,b in zip(range(len(cat_list)),data_plot):  
+         plt.text(a, b+0.05, '%d' % b, ha='center', va= 'bottom',fontsize=fsize, weight='bold') 
+    plt.savefig(bar_name)
+    plt.show()
+
 def multi_process_get_item_cache(param):
     dataset_loader, index = param
     print(index)
@@ -680,7 +926,7 @@ def get_set_visual_feature_cache():
     opt.set_name = 'train'
     opt.dbSet = 'vid'
     cpu_num = 20
-    pdb.set_trace()
+    #pdb.set_trace()
     data_loader, dataset = build_dataloader(opt)
     pdb.set_trace()
     set_length = len(dataset.vid_parser.tube_cap_dict)
@@ -699,12 +945,356 @@ def get_h5_feature_dict(h5file_path):
     img_prp_reader = h5py.File(h5file_path, 'r')
     return img_prp_reader
 
+def check_str_valid():
+    train_ann_list_fn_only = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/train_ann_list_v2_txt_only.txt'  
+    val_ann_list_fn_only = '/data1/zfchen/data/ILSVRC/Data/VID/annSamples/val_ann_list_v2_txt_only.txt'
+    txt_lines = textread(val_ann_list_fn_only)
+    for i, txt_line in enumerate(txt_lines):
+        ele_list = txt_line.split(' ')
+        #pdb.set_trace()
+        print(i)
+        if len(ele_list)<2:
+            pdb.set_trace()
+
+def sample_frames_from_vid_parser(vid_parper, index ,save_num, out_fd, color_map=(0,0,255)):
+    ann, vdName =vid_parper.get_shot_anno_from_index(index)
+    track = ann['track']
+    trackId = ann['id']
+    #print(track)
+    im_height = 300
+    imFd = os.path.join(vid_parper.jpg_folder, vdName) 
+    tmpList = list()
+    frmNum = 36
+    if frmNum>len(track):
+        frmNum = len(track)
+    smp_width = int(math.floor(len(track)*1.0/frmNum))
+    save_width = int(frmNum/save_num)
+    for iii in range(frmNum):
+        frmId = smp_width*iii
+        vdFrmInfo = track[frmId]
+        imPath = imFd + '/' + '%06d.JPEG' %(vdFrmInfo['frame']-1)
+        img = cv2.imread(imPath)
+        bbox = tuple(vdFrmInfo['bbox'])
+        imOut = cv2.rectangle(img, bbox[0:2], bbox[2:4], color_map, 6)
+        hs, ws, cs = imOut.shape
+        imOut = cv2.resize(imOut, (int(ws*1.0*im_height/hs), im_height))
+        imNameRaw = os.path.basename(imPath).split('.')[0]
+        vdNameOut = vdName.replace('/', '__')
+        imOutPath = os.path.join(out_fd, 'samples', str(index) ,
+                imNameRaw + '_' +vdNameOut + '_' + str(frmId)  + '.JPEG')
+        makedirs_if_missing(os.path.dirname(imOutPath))
+        tmpList.append(imOut)
+        if(iii%save_width==0):
+            cv2.imwrite(imOutPath, imOut)
+    print('finish generating set: %d\n' %(index))
+
+def sample_for_paper():
+    #ins_list = [250, 3889, 311, 1646]
+    #ins_list = [372]
+    #ins_list = [677]
+    #ins_list = [2012]
+    #ins_list =[119]
+    #ins_list =[64]
+    #ins_list =[393]
+    #ins_list =[195]
+    #ins_list =[286]
+    #ins_list =[175]
+    #ins_list =[2066]
+    #ins_list =[1902]
+    #ins_list =[22]
+    #ins_list =[950]
+    ins_list =[2075]
+    #color_map = (0, 0, 255) # red
+    color_map = (0, 255, 0) # red
+    opt = parse_args()
+    opt.set_name = 'train'
+    opt.dbSet = 'vid'
+    save_num = 20
+    out_fd ='../data/figure_paper'
+    data_loader, dataset = build_dataloader(opt)
+    vid_parper = dataset.vid_parser
+    for i, index in enumerate(ins_list):
+        sample_frames_from_vid_parser(vid_parper, index ,save_num, out_fd, color_map)
+
+def draw_specific_tube_proposals(vid_parser, index, tube_id_list, tube_proposal_list, out_fd, color_list=None):
+    
+    load_image_flag = True
+    lbl = index
+    frmImList = list()
+    tube_info_sub_prp, frm_info_list = tube_proposal_list
+    if color_list is None:
+        color_list =[(255, 0, 0), (0, 255, 0)]
+        #color_list =[(0, 255, 0), (255, 0, 0)]
+    dotted = False
+    line_width = 6
+    for ii, tube_id in enumerate(tube_id_list):
+        if ii==1:
+            dotted = True
+            line_width =3
+        tube = copy.deepcopy(tube_info_sub_prp[0][tube_id])
+
+        if load_image_flag:
+            # visualize sample results
+            vd_name, ins_id_str = vid_parser.get_shot_info_from_index(lbl)
+            frmImNameList = [os.path.join(vid_parser.jpg_folder, vd_name, frame_name + '.JPEG') for frame_name in frm_info_list]
+            for fId, imPath  in enumerate(frmImNameList):
+                img = cv2.imread(imPath)
+                frmImList.append(img)
+            vis_frame_num = 3000
+            visIner =max(int(len(frmImList) /vis_frame_num), 1)
+            load_image_flag = False
+            
+            frmImList_vis = [frmImList[iii] for iii in range(0, len(frmImList), visIner)]
+        
+        tube_vis = [tube[iii] for iii in range(0, len(frmImList), visIner)]
+        print('visualizing tube %d\n'%(tube_id))
+        tube_vis_resize = resize_tube_bbx(tube_vis, frmImList_vis)
+        frmImList_vis = vis_image_bbx(frmImList_vis, tube_vis_resize, color_list[ii], line_width, dotted)
+        #frmImList_vis = vis_gray_but_bbx(frmImList_vis, tube_vis_resize)
+        break
+
+    out_fd_full = os.path.join(out_fd, vid_parser.set_name + str(lbl))
+    makedirs_if_missing(out_fd_full)
+    frm_name_list = list()
+    for i, idx  in enumerate(range(0, len(frmImList), visIner)):
+        out_fn_full = os.path.join(out_fd_full, frm_info_list[idx]+'.jpg')
+        cv2.imwrite(out_fn_full, frmImList_vis[i])
+        frm_name_list.append(frm_info_list[idx])
+    return frmImList_vis, frm_name_list  
+
+def vis_compare_ins():
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    opt.set_name = 'val'
+    out_fd ='../data/figure_paper/compare_sample'
+    ins_id =[528, 626]
+    data_loader, dataset = build_dataloader(opt)
+    vid_parser = dataset.vid_parser
+    tube_id_list=[2, 20]
+    for i, index in enumerate(ins_id):
+        ins_ann, vd_name = vid_parser.get_shot_anno_from_index(index)
+        tube_info_path = os.path.join(dataset.tubePath, dataset.set_name, dataset.prp_type, str(index)+'.pd') 
+        tube_proposal_list = pickleload(tube_info_path)
+        draw_specific_tube_proposals(vid_parser, index, tube_id_list, tube_proposal_list, out_fd)
+
+def parse_tube_info(tube_info_fn):
+    info_list = textread(tube_info_fn)
+    tube_info_obj = {}
+    ins_list = list()
+    tube_id_att = list()
+    tube_id_dvsa = list()
+    tube_id_gr = list()
+    tube_ov_att = list()
+    tube_ov_dvsa = list()
+    tube_ov_gr = list()
+    tube_ov_frm = list()
+    for i, line_info in enumerate(info_list):
+        text_segments = line_info.split(' ')
+        ins_list.append(int(text_segments[0]))
+        tube_id_att.append(int(text_segments[2]))
+        tube_ov_att.append(float(text_segments[3]))
+        tube_id_dvsa.append(int(text_segments[4]))
+        tube_ov_dvsa.append(float(text_segments[5]))
+        tube_id_gr.append(int(text_segments[6]))
+        tube_ov_gr.append(float(text_segments[7]))
+        tube_ov_frm.append(float(text_segments[8]))
+
+    tube_info_obj['ins_list'] = ins_list
+    tube_info_obj['tube_id_att'] = tube_id_att
+    tube_info_obj['tube_ov_att'] = tube_ov_att
+    tube_info_obj['tube_id_dvsa'] = tube_id_dvsa
+    tube_info_obj['tube_ov_dvsa'] = tube_ov_dvsa
+    tube_info_obj['tube_id_gr'] = tube_id_gr
+    tube_info_obj['tube_ov_gr'] = tube_ov_gr
+    tube_info_obj['tube_ov_frm'] = tube_ov_frm
+    return tube_info_obj
+
+
+def vis_compare_ins_val():
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    opt.set_name = 'val'
+    out_fd ='../data/figure_paper/compare_sample'
+    tube_info_fn = '../data/figure_paper/compare_sample/val_tube_list.txt'
+    data_loader, dataset = build_dataloader(opt)
+    vid_parser = dataset.vid_parser
+    # tube_id_list=[2, 20]
+    tube_info_obj = parse_tube_info(tube_info_fn)
+    ins_id_list = tube_info_obj['ins_list']
+    tube_id_att = tube_info_obj['tube_id_att']
+    tube_id_dvsa = tube_info_obj['tube_id_dvsa']
+    tube_id_gr = tube_info_obj['tube_id_gr']
+
+    for i, index in enumerate(ins_id_list):
+        ins_ann, vd_name = vid_parser.get_shot_anno_from_index(index)
+        tube_id_list = [tube_id_att[i], tube_id_dvsa[i], tube_id_gr[i]]
+        tube_info_path = os.path.join(dataset.tubePath, dataset.set_name, dataset.prp_type, str(index)+'.pd') 
+        tube_proposal_list = pickleload(tube_info_path)
+        pdb.set_trace()
+        draw_specific_tube_proposals(vid_parser, index, tube_id_list, tube_proposal_list, out_fd)
+
+def get_gt_bbx(ins_ann):
+    tube_length = len(ins_ann['track'])
+    gt_bbx = list()
+    for i in range(tube_length):
+        tmp_bbx = copy.deepcopy(ins_ann['track'][i]['bbox'])
+        h, w = ins_ann['track'][i]['frame_size']
+        tmp_bbx[0] = tmp_bbx[0]*1.0/w
+        tmp_bbx[2] = tmp_bbx[2]*1.0/w
+        tmp_bbx[1] = tmp_bbx[1]*1.0/h
+        tmp_bbx[3] = tmp_bbx[3]*1.0/h
+        gt_bbx.append(tmp_bbx)
+    return gt_bbx
+
+def get_frm_result(result_frm, index):
+    for result_tmp in result_frm:
+        index_tmp = result_tmp[0]
+        if index_tmp==index:
+            return result_tmp[2][0][0][0]
+
+def vis_compare_ins_val_sep():
+    opt = parse_args()
+    opt.dbSet = 'vid'
+    out_fd ='../data/figure_paper/compare_sample'
+    opt.set_name = 'val'
+    tube_info_fn = '../data/figure_paper/compare_sample/val_tube_list_ver_dense.txt'
+    #tube_info_fn = '../data/figure_paper/compare_sample/val_tube_list_v2.txt'
+    frm_result_fn = '../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankFrm_fc_none_full_txt_gru_rgb_lr_0.0_vid_margin_10.0_frm_level_result_val_rankFrm_ep_5_itr0.pk'
+    #tube_info_fn = '../data/figure_paper/compare_sample/test_tube_list_ver_choose.txt'
+    #opt.set_name = 'test'
+    result_frm = pickleload(frm_result_fn)
+    #pdb.set_trace()
+    
+    data_loader, dataset = build_dataloader(opt)
+    vid_parser = dataset.vid_parser
+    # tube_id_list=[2, 20]
+    tube_info_obj = parse_tube_info(tube_info_fn)
+    ins_id_list = tube_info_obj['ins_list']
+    tube_id_att = tube_info_obj['tube_id_att']
+    tube_id_dvsa = tube_info_obj['tube_id_dvsa']
+    tube_id_gr = tube_info_obj['tube_id_gr']
+
+    tube_ov_att = tube_info_obj['tube_ov_att']
+    tube_ov_dvsa = tube_info_obj['tube_ov_dvsa']
+    tube_ov_gr = tube_info_obj['tube_ov_gr']
+    tube_ov_frm = tube_info_obj['tube_ov_frm']
+    #pdb.set_trace()
+    for i, index in enumerate(ins_id_list):
+        ins_ann, vd_name = vid_parser.get_shot_anno_from_index(index)
+        tube_info_path = os.path.join(dataset.tubePath, dataset.set_name, dataset.prp_type, str(index)+'.pd') 
+        tube_proposal_list = pickleload(tube_info_path)
+        
+        # adding gt to prp
+        tube_gt = get_gt_bbx(ins_ann)
+        tube_prp_id_length = len(tube_proposal_list[0][0])
+        tube_proposal_list[0][0].append(tube_gt)
+        tube_proposal_list[0][1].append(1)
+        # adding frm prp
+
+        tube_proposal_list[0][0].append(get_frm_result(result_frm, index))
+        tube_proposal_list[0][1].append(tube_ov_frm[i])
+       
+        tube_id_list_ori = [tube_id_att[i], tube_id_dvsa[i], tube_id_gr[i], tube_prp_id_length+1]
+
+        im_list = list()
+        for j in range(4):
+            new_tube_id_list = [tube_id_list_ori[j], tube_prp_id_length]
+            #new_tube_id_list = [tube_prp_id_length, tube_id_list_ori[j] ]
+            out_fd_sub = os.path.join(out_fd, str(j))
+            frmImList_vis, frm_name_list = draw_specific_tube_proposals(vid_parser, index, new_tube_id_list, copy.deepcopy(tube_proposal_list), out_fd_sub)
+            im_list.append(frmImList_vis)
+
+        for im_id, frm_name in enumerate(frm_name_list):
+            mat_att = im_list[0][im_id]
+            mat_dvsa = im_list[1][im_id]
+            mat_gr = im_list[2][im_id]
+            mat_frm = im_list[3][im_id]
+            h, w, c = mat_att.shape
+            mat_all = np.zeros((h*2, w*2, c), np.float32)
+            mat_all[:h, :w, :] = mat_att
+            mat_all[:h, w:2*w, :] = mat_dvsa
+            mat_all[h:2*h, :w, :] = mat_gr
+            mat_all[h:2*h, w:2*w, :] = mat_frm
+            out_fd_sub = os.path.join(out_fd, 'full', dataset.set_name+'_'+str(index), frm_name +'.jpg')
+            makedirs_if_missing(os.path.dirname(out_fd_sub))
+            cv2.imwrite(out_fd_sub, mat_all)
+
+        print('finish')
+
+
+def sample_best_tube():
+    att_result_fn ='../data/final_models/tube_result/log_bs_4_tn_30_wl_20_cn_1_fd_512_coAtt_lstm_none_full_txt_gru_rgb_i3d_lr_100.0_vid_margin_10.0lstm_hd_512result_val_coAttV1_ep_21_lamda_1.pk'
+    dvsa_result_fn ='../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankTube_lstmV2_none_full_txt_lstmV2_rgb_i3d_lr_100.0_vid_margin_10.0result_val_rank_lstm_ep_30_lamda_0.pk'
+    gr_result_fn ='../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankGroundRV2_lstmV2_none_full_txt_lstmV2_rgb_i3d_lr_100.0_vid_margin_10.0result_val_gr_lstm_ep_26_lamda_0.pk'
+    frm_result_fn = '../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankFrm_fc_none_full_txt_gru_rgb_lr_0.0_vid_margin_10.0_frm_level_result_val_rankFrm_ep_5_itr0.pk'
+    
+    #att_result_fn ='../data/final_models/tube_result/tube_result_bs_4_tn_30_wl_20_cn_1_fd_512_coAtt_lstm_none_full_txt_gru_rgb_i3d_lr_100.0_vid_margin_10.0lstm_hd_512result_test_coAttV1_ep_21_lamda_1.pk'
+    #dvsa_result_fn ='../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankTube_lstmV2_none_full_txt_lstmV2_rgb_i3d_lr_100.0_vid_margin_10.0result_test_rank_lstm_ep_30_lamda_0.pk'
+    #gr_result_fn ='../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankGroundRV2_lstmV2_none_full_txt_lstmV2_rgb_i3d_lr_100.0_vid_margin_10.0result_test_gr_lstm_ep_26_lamda_0.pk'
+    #frm_result_fn = '../data/final_models/tube_result/_bs_16_tn_30_wl_20_cn_1_fd_512_rankFrm_fc_none_full_txt_gru_rgb_lr_0.0_vid_margin_10.0_frm_level_result_test_rankFrm_ep_5_itr0.pk'
+     
+    result_att = pickleload(att_result_fn)
+    result_dvsa = pickleload(dvsa_result_fn)
+    result_gr = pickleload(gr_result_fn)
+    result_frm = pickleload(frm_result_fn)
+    
+    thre_id =4 # 0.5
+    thre_list_length=len(result_att)
+    test_set_length = len(result_att[thre_id])
+
+    #pdb.set_trace()
+    txt_out_fn = '../data/figure_paper/compare_sample/val_tube_list_ver_choose_v4.txt'
+    #txt_out_fn = '../data/figure_paper/compare_sample/test_tube_list_ver_choose.txt'
+    #txt_out_fn = '../data/figure_paper/compare_sample/test_tube_list.txt'
+    sample_list = list()
+    for idx in range(test_set_length):
+        cur_att_smp = result_att[thre_id][idx]
+        cur_dvsa_smp = result_dvsa[thre_id][idx]
+        cur_gr_smp = result_gr[thre_id][idx]
+        if cur_att_smp[0]==23:
+            pdb.set_trace()
+        #if (cur_att_smp[1]>0 and cur_dvsa_smp[1]<1 and cur_gr_smp[1]<1 and result_frm[idx][1]<1):
+        if (0 and cur_att_smp[1]>0 and cur_dvsa_smp[1]<1 and cur_gr_smp[1]<1):
+        #if (cur_att_smp[1]>0  and result_frm[idx][1]<1):
+        #if (cur_att_smp[1]>0 ):
+            print(cur_att_smp[:2])
+            for i in range(thre_list_length):
+                print(result_dvsa[i][idx][:2])
+                print(result_gr[i][idx][:2])
+            print(cur_att_smp[0]+7742)
+            tmp_shot_info = '%d %d %d %f %d %f %d %f %f' %(cur_att_smp[0], cur_att_smp[0]+7742 , \
+                    cur_att_smp[2][0], cur_att_smp[4][0], cur_dvsa_smp[2][0], cur_dvsa_smp[4][0], \
+                    cur_gr_smp[2][0], cur_gr_smp[4][0], result_frm[idx][3][0]) 
+            sample_list.append(tmp_shot_info)
+            #pdb.set_trace()
+    textdump(txt_out_fn, sample_list) 
+
+def distribute_compare():
+    att_result_fn ='../data/final_models/tube_result/log_bs_4_tn_30_wl_20_cn_1_fd_512_coAtt_lstm_none_full_txt_gru_rgb_i3d_lr_100.0_vid_margin_10.0lstm_hd_512result_val_coAttV1_ep_21_lamda_1.pk'
+    att_result_abs_fn ='../data/final_models/tube_result/log_bs_4_tn_30_wl_20_cn_1_fd_512_coAtt_lstm_none_full_txt_gru_rgb_i3d_lr_100.0_vid_margin_10.0lstm_hd_512result_val_coAttV1_ep_21_lamda_1.pk'
+    result_att = pickleload(att_result_fn)
+    result_att_abs = pickleload(att_result_abs_fn)
+
+
+
+
+def visualize_caption_weight():
+    cap_w = 0.001*[-1.7339, -1.1330,  0.9425, -0.4879, -1.0536, -1.6465, -1.4925,]
+    cap_name = ['black', 'white', 'puppy', 'in', 'the', 'middle', 'is', 'eating', 'food', 'in', 'mans', 'hand']
+
+
 
 if __name__ == '__main__':
+    #vis_compare_ins()
+    #vis_compare_ins_val_sep()
+    #sample_best_tube()
     
-    
+    #sample_for_paper()
+    #statistic_vid_word_list()
+    #show_cat_distribution()
+    #check_str_valid()
     #vid_split_validation_test()
-    vid_txt_only()
+    #vid_txt_only()
 
     #file_path = '/data1/zfchen/code/video_feature/feature_extraction/tmp/vid/val/0.h5'
     #out_dict = get_h5_feature_dict(file_path)

@@ -8,8 +8,9 @@ from easydict import EasyDict as edict
 import numpy as np
 import os
 import shutil
+from dashed_rect import drawrect
 #from settings import FFMPEG
-
+import pdb
 TMP_DIR = '.tmp'
 FFMPEG = 'ffmpeg'
 
@@ -48,7 +49,7 @@ def imread_if_str(img):
         img = cv2.imread(img)
     return img
 
-def draw_rectangle(img, bbox, color=(0,0,255), thickness=3):
+def draw_rectangle(img, bbox, color=(0,0,255), thickness=3, use_dashed_line=False):
     img = imread_if_str(img)
     if isinstance(bbox, dict):
         bbox = [
@@ -72,10 +73,60 @@ def draw_rectangle(img, bbox, color=(0,0,255), thickness=3):
     assert bbox[2] <= img.shape[1]
     assert bbox[3] <= img.shape[0]
     cur_img = copy.deepcopy(img)
-    cv2.rectangle(
-        cur_img,
-        (int(bbox[0]), int(bbox[1])),
-        (int(bbox[2]), int(bbox[3])),
-        color,
-        thickness)
+    #pdb.set_trace()
+    if use_dashed_line:
+        drawrect(
+            cur_img,
+            (int(bbox[0]), int(bbox[1])),
+            (int(bbox[2]), int(bbox[3])),
+            color,
+            thickness,
+            'dotted'
+            )
+    else:
+        #pdb.set_trace()
+        cv2.rectangle(
+            cur_img,
+            (int(bbox[0]), int(bbox[1])),
+            (int(bbox[2]), int(bbox[3])),
+            color,
+            thickness)
     return cur_img
+
+def rgb2gray(rgb):
+    r, g, b = rgb[:,:,0], rgb[:,:,1], rgb[:,:,2]
+    gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
+    return gray
+
+def gray_background(img, bbox):
+    img = imread_if_str(img)
+    if isinstance(bbox, dict):
+        bbox = [
+            bbox['x1'],
+            bbox['y1'],
+            bbox['x2'],
+            bbox['y2'],
+        ]
+    bbox[0] = int(max(bbox[0], 0))
+    bbox[1] = int(max(bbox[1], 0))
+    bbox[0] = min(bbox[0], img.shape[1])
+    bbox[1] = min(bbox[1], img.shape[0])
+    bbox[2] = int(max(bbox[2], 0))
+    bbox[3] = int(max(bbox[3], 0))
+    bbox[2] = min(bbox[2], img.shape[1])
+    bbox[3] = min(bbox[3], img.shape[0])
+    assert bbox[2] >= bbox[0]
+    assert bbox[3] >= bbox[1]
+    assert bbox[0] >= 0
+    assert bbox[1] >= 0
+    assert bbox[2] <= img.shape[1]
+    assert bbox[3] <= img.shape[0]
+    #gray_img = copy.deepcopy(img)
+    #gray_img = np.stack((gray_img, gray_img, gray_img), axis=2)
+    #gray_img = rgb2gray(gray_img)
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray_img = np.stack((gray_img, gray_img, gray_img), axis=2)
+    #pdb.set_trace()
+    gray_img[bbox[1]:bbox[3], bbox[0]:bbox[2], ...] = img[bbox[1]:bbox[3], bbox[0]:bbox[2], ...]
+    #pdb.set_trace()
+    return gray_img

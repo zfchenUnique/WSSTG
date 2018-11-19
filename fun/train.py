@@ -42,7 +42,7 @@ if __name__=='__main__':
         resultList_full = list()
         tBf = time.time() 
         for itr, inputData in enumerate(dataLoader):
-            tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+            tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
             #pdb.set_trace()
             dataIdx = None
             tmp_bsize = tube_embedding.shape[0]
@@ -61,10 +61,35 @@ if __name__=='__main__':
                 loss = lossEster(imFtr, txtFtr, vd_name_list)
                 resultList = evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
                 resultList_full +=resultList
-            if opt.wsMode =='coAtt':
+            if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
                 simMM = model(imDis, wordEmb, cap_length_list)
+#                pdb.set_trace()
                 simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
                 loss = lossEster(simMM=simMM, lblList =vd_name_list)
+                resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
+                resultList_full +=resultList
+            if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
+                imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                #pdb.set_trace()
+                loss = lossEster(logMat, word_lbl_list, simMM, vd_name_list)
+                resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
+                resultList_full +=resultList
+
+            if opt.wsMode =='coAttGroundR':
+                #pdb.set_trace()
+                imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                #pdb.set_trace()
+                print(torch.max(simMM))
+                print(torch.min(simMM))
+                loss = lossEster(logMat, word_lbl_list, simMM, vd_name_list)
                 resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
                 resultList_full +=resultList
 
@@ -73,6 +98,7 @@ if __name__=='__main__':
             optimizer.zero_grad()
             loss.backward(retain_graph=True )
             optimizer.step()
+            optimizer.zero_grad()
             tNf = time.time() 
             if(itr%opt.visIter==0):
                 #tAf = time.time()
@@ -95,10 +121,13 @@ if __name__=='__main__':
                 vIdList = list()
                 set_name_ori= opt.set_name
                 opt.set_name = 'val'
+                batchSizeOri = opt.batchSize
+                opt.batchSize = 8
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
+                opt.batchSize = batchSizeOri 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
-                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
                     #pdb.set_trace()
                     dataIdx = None
                     #pdb.set_trace()
@@ -115,9 +144,26 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    if opt.wsMode =='coAtt':
+                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
+                        resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
+                    if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
+                        tmp_bsize = b_size
+                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                        resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
+                    if opt.wsMode =='coAttGroundR':
+                        #pdb.set_trace()
+                        tmp_bsize = b_size
+                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
 
                 accSum = 0
@@ -136,10 +182,13 @@ if __name__=='__main__':
                 vIdList = list()
                 set_name_ori= opt.set_name
                 opt.set_name = 'test'
+                batchSizeOri = opt.batchSize
+                opt.batchSize = 8
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
+                opt.batchSize = batchSizeOri 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
-                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list = inputData
+                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
                     #pdb.set_trace()
                     dataIdx = None
                     #pdb.set_trace()
@@ -156,10 +205,28 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    if opt.wsMode =='coAtt':
+                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
+                    if opt.wsMode =='rankGroundR' or opt.wsMode=='rankGroundRV2':
+                        tmp_bsize = b_size
+                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                        resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
+                    if opt.wsMode =='coAttGroundR':
+                        #pdb.set_trace()
+                        tmp_bsize = b_size
+                        imDis = imDis.view(tmp_bsize, -1, imDis.shape[1], imDis.shape[2])
+                        wordEmb = wordEmb.view(tmp_bsize, -1, wordEmb.shape[1], wordEmb.shape[2])
+                        logMat, simMM = model(imDis, wordEmb, cap_length_list)
+                        simMM = simMM.unsqueeze(dim=2).expand(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)
+                        simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
+                        resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
+
 
                 accSum = 0
                 for ele in resultList:
@@ -176,12 +243,3 @@ if __name__=='__main__':
             index, recall_k= ele
             accSum +=recall_k
         writer.add_scalar('Average training accuracy', accSum/len(resultList_full), ep*len(datasetOri)+ itr*opt.batchSize)
-                #dataLoader, datasetOri= build_dataloader(opt) 
-          #dataLoader, datasetOri= build_dataloader(opt) 
-        
-        accSum = 0
-        for ele in resultList_full:
-            index, recall_k= ele
-            accSum +=recall_k
-        writer.add_scalar('Average training accuracy', accSum/len(resultList_full), ep*len(datasetOri)+ itr*opt.batchSize)
-         

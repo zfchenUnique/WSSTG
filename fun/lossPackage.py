@@ -29,9 +29,12 @@ class lossEvaluator(nn.Module):
             self.entropy_calculator = HLoss()
 
     def forward(self, imFtr=None, disFtr=None, lblList=None, simMM=None):
-        if self.wsMode=='rankTube':
+        if self.lossWFlag:
+            loss = self.forwardRankW_v2(imFtr, disFtr, lblList)
+            return loss
+        if self.wsMode=='rankTube' or self.wsMode=='rankFrm':
             loss = self.forwardRank(imFtr, disFtr, lblList)
-        elif self.wsMode=='coAtt':
+        elif self.wsMode=='coAtt' or self.wsMode =='coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4':
             loss = self.forwardCoAtt(simMM, lblList)
         return loss
 
@@ -187,7 +190,6 @@ class lossEvaluator(nn.Module):
         print('\n')
         return loss
 
-
     def forwardRankW(self, imFtr, disFtr, lblList):
         disFtr = disFtr.squeeze()
         bSize = len(lblList)
@@ -211,9 +213,9 @@ class lossEvaluator(nn.Module):
                     tmpLoss = simMax[i, j] - posSim + self.margin
                     pairNum +=1
                     if(tmpLoss>0):
-                        loss +=tmpLoss*self.lamda*simMax[i, j]
-                    loss +=(1-self.lamda)*DMtr[i, j]
-        loss = loss/pairNum
+                        loss +=tmpLoss*self.lamda*posSim
+                    loss +=(1-self.lamda)*DMtr[i, i]
+        loss = loss/(pairNum+0.000001)
 
         if self.biLossFlag:
             lossBi = torch.zeros(1).cuda()
@@ -227,15 +229,110 @@ class lossEvaluator(nn.Module):
                         tmpLoss = simMax[j, i] - posSim + self.margin
                         pairNum +=1
                         if(tmpLoss>0):
-                            lossBi +=tmpLoss*self.lamda*simMax[i, j]
+                            lossBi +=tmpLoss*self.lamda*posSim
             if pairNum>0:
-                loss +=lossBi/pairNum
+                loss +=lossBi/(0.000001+pairNum)
+        return loss
+
+    def forwardRankW_v2(self, imFtr, disFtr, lblList):
+        disFtr = disFtr.squeeze()
+        bSize = len(lblList)
+        if(len(lblList)==1):
+            return torch.zeros(1).cuda()
+#        pdb.set_trace()
+        imFtr = imFtr.view(-1, imFtr.shape[2])
+        simMM = torch.mm(imFtr, disFtr.transpose(0, 1))
+        simMMRe = simMM.view(bSize, -1, bSize)
+        simMax, maxIdx= torch.max(simMMRe, dim=1)
+        simMax = F.sigmoid(simMax)
+        DMtr = -2*torch.log10(simMax)
+        loss = torch.zeros(1).cuda()
+        pairNum = 0
+        for i, lblIm in enumerate(lblList):
+            posSim = simMax[i, i]
+            tmp_frm_loss = 0
+            for j, lblTxt in enumerate(lblList):
+                if(lblIm==lblTxt):
+                    continue
+                else:
+                    tmpLoss = simMax[i, j] - posSim + self.margin
+                    if(tmpLoss>0):
+                        tmp_frm_loss +=tmpLoss*self.lamda*posSim
+
+            for j, lblIm in enumerate(lblList):
+                    if(lblIm==lblTxt):
+                        continue
+                    else:
+                        tmpLoss = simMax[j, i] - posSim + self.margin
+                        #pairNum +=1
+                        if(tmpLoss>0):
+                            tmp_frm_loss +=tmpLoss*self.lamda*posSim
+            loss +=(1-self.lamda)*DMtr[i, i]
+            pairNum +=1
+            loss +=tmp_frm_loss
+        loss = loss/(pairNum+0.000001)
+        return loss
+
+class lossGroundR(nn.Module):
+    def __init__(self, entropy_regu_flag=False, lamda2=0):
+        super(lossGroundR, self).__init__()
+        #pdb.set_trace()  
+        self.criterion = nn.CrossEntropyLoss()
+        if  entropy_regu_flag:
+            self.entropy_regu_flag= True
+            self.entropy_calculator = HLoss()
+            self.lamda2 =lamda2
+        else:
+            self.entropy_regu_flag= False
+    
+    def forward(self, logMat, wordLbl, simMM=None, lblList=None):
+#        pdb.set_trace()
+
+#       pdb.set_trace()
+        loss = 0
+        bSize = len(wordLbl)
+        for i in range(bSize):
+            assert len(wordLbl[i])==1
+            wL = len(wordLbl[i][0])
+            tmpPredict = logMat[i, :wL, :]
+            loss += self.criterion(tmpPredict, torch.LongTensor(wordLbl[i][0]).cuda())
+
+        loss = loss/(bSize+0.00001) #  loss nomalization
+        # regulation loss
+        if self.entropy_regu_flag and simMM is not None:
+            #simMMRe = simMM.view(bSize, -1, bSize)
+            # simMMRe: bSize, prpNum, bSize
+            simMMRe = simMM.squeeze()
+            ftr_match_pair_list = list()
+            ftr_unmatch_pair_list = list()
+            bSize = simMM.shape[0]
+            for i in range(bSize):
+                for j in range(bSize):
+                    if i==j:
+                        ftr_match_pair_list.append(simMMRe[i, ..., i])
+                    elif lblList[i]!=lblList[j]:
+                        ftr_unmatch_pair_list.append(simMMRe[i, ..., j])
+
+            ftr_match_pair_mat = torch.stack(ftr_match_pair_list, 0)
+            ftr_unmatch_pair_mat = torch.stack(ftr_unmatch_pair_list, 0)
+            match_num = len(ftr_match_pair_list)
+            unmatch_num = len(ftr_unmatch_pair_list)
+            if match_num>0:
+                entro_loss = self.entropy_calculator(ftr_match_pair_mat)
+            loss +=self.lamda2*entro_loss 
+            print('entropy loss: %3f ' %(float(entro_loss)))
+        
         return loss
 
 def build_lossEval(opts):
-    if opts.wsMode == 'rankTube' or opts.wsMode=='coAtt':
+    if opts.wsMode == 'rankTube' or opts.wsMode=='coAtt' or opts.wsMode=='coAttV2' or opts.wsMode=='coAttV3' or opts.wsMode == 'coAttV4' or  opts.wsMode=='rankFrm':
         loss_criterion = lossEvaluator(opts.margin, opts.biLoss, opts.lossW, \
                 opts.lamda, opts.struct_flag, opts.struct_only, \
                 opts.entropy_regu_flag, opts.lamda2)
         loss_criterion.wsMode =opts.wsMode
+        return loss_criterion
+    elif opts.wsMode =='rankGroundR' or opts.wsMode =='coAttGroundR' or opts.wsMode=='rankGroundRV2':
+        loss_criterion = lossGroundR(entropy_regu_flag=opts.entropy_regu_flag, \
+               lamda2=opts.lamda2 )
+        loss_criterion.wsMode = opts.wsMode
         return loss_criterion

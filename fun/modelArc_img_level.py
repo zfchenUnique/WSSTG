@@ -229,7 +229,7 @@ class visDecoder(nn.Module):
         rpScore = rpScore.view(bSize, rpNum)
         assert(len(rpScore.shape)==2)
         rpSS= F.softmax(rpScore, dim=1) 
-        rpSS = rpSS.view(bSize, rpNum, 1)
+        rpSS = rpSS.viewbSize, rpNum, 1)
         visFtrAtt = torch.sum(torch.mul(visRPFtr, rpSS), dim=1)
         return visFtrAtt, rpSS 
 

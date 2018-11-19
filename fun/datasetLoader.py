@@ -56,12 +56,14 @@ def build_dataloader(opt):
         i3d_ftr_path ='/data1/zfchen/code/video_feature/feature_extraction/tmp/vid'
         prp_type = 'coco_30_2'
         mean_cache_ftr_path = '/data1/zfchen/data/vid/meanFeature'
+        ftr_context_path = '/data1/zfchen/data/vid/coco32/context/Data/VID'
         if opt.server_id !=36:
             out_cached_folder = '/data1/zfchen/data36/vid/vidTubeCacheFtr'
             ann_folder = '/data1/zfchen/data36/ILSVRC'
             ftrPath = '/mnt/ceph_cv/aicv_image_data/forestlma/zfchen/vidPrp/Data/VID'
             tubePath = '/data1/zfchen/data36/ILSVRC/tubePrp'
             mean_cache_ftr_path = '/data1/zfchen/data36/vid/meanFeature'
+            ftr_context_path = '/data1/zfchen/data36/vid/coco32/context/Data/VID'
 
         set_name = opt.set_name
         dataset = vidDataloader(ann_folder, prp_type, set_name, dictFile, tubePath \
@@ -73,19 +75,23 @@ def build_dataloader(opt):
         pos_type = opt.pos_type
         vis_ftr_type = opt.vis_ftr_type
         use_mean_cache_flag = opt.use_mean_cache_flag
-#        pdb.set_trace()
+        context_flag = opt.context_flag
+        frm_level_flag = opt.frm_level_flag
+        frm_num = opt.frm_num
         dataset.image_samper_set_up(rpNum= rpNum, capNum = capNum, \
                 maxWordNum= maxWordNum, usedBadWord=False, \
                 pos_emb_dim=pos_emb_dim, pos_type=pos_type, vis_ftr_type=vis_ftr_type, \
                 i3d_ftr_path=i3d_ftr_path, use_mean_cache_flag=use_mean_cache_flag,\
-                mean_cache_ftr_path=mean_cache_ftr_path)
+                mean_cache_ftr_path=mean_cache_ftr_path, context_flag=context_flag, ftr_context_path=ftr_context_path, frm_level_flag=frm_level_flag, frm_num=frm_num)
         
         if opt.cache_flag == True:
             pre_load_data(dataset)
 
+        shuffle_flag = not opt.no_shuffle_flag 
+
         data_loader = data.DataLoader(dataset,  opt.batchSize, \
             num_workers=opt.num_workers, collate_fn=dis_collate_vid, \
-            shuffle=True, pin_memory=True)
+            shuffle=shuffle_flag, pin_memory=True)
         return data_loader, dataset
     
     elif opt.dbSet=='actNet':
@@ -125,18 +131,22 @@ def build_dataloader(opt):
         pos_emb_dim = opt.pos_emb_dim
         pos_type = opt.pos_type
         use_mean_cache_flag = opt.use_mean_cache_flag
+        frm_level_flag = opt.frm_level_flag
+        frm_num = opt.frm_num
 
         dataset.image_samper_set_up(rpNum= rpNum, capNum= capNum, maxWordNum= maxWordNum, \
                 usedBadWord=False, pos_type=pos_type, pos_emb_dim=pos_emb_dim, \
                 vis_ftr_type=vis_ftr_type, i3d_ftr_path= i3d_ftr_path, \
-                use_mean_cache_flag=use_mean_cache_flag, mean_cache_ftr_path=mean_cache_ftr_path)
+                use_mean_cache_flag=use_mean_cache_flag, mean_cache_ftr_path=mean_cache_ftr_path, \
+                frm_level_flag=frm_level_flag, frm_num = frm_num)
         
         if opt.cache_flag == True:
             pre_load_data(dataset)
 
+        shuffle_flag = not opt.no_shuffle_flag 
         data_loader = data.DataLoader(dataset,  opt.batchSize, \
                 num_workers=opt.num_workers, collate_fn=dis_collate_actNet, \
-                shuffle=True, pin_memory=True)
+                shuffle=shuffle_flag, pin_memory=True)
         return data_loader, dataset
 
     else:
@@ -153,13 +163,13 @@ if __name__=='__main__':
     opt.cache_flag = False
     opt.pos_type = 'none'
     data_loader, dataset_ori = build_dataloader(opt)
-    out_dict_name = os.path.join(out_pre, opt.dbSet, 'meanFeature', opt.set_name, 'mean_feature_'+ opt.vis_ftr_type+'.h5')
-    pre_save_mean_data(dataset_ori, out_dict_name)
+    #out_dict_name = os.path.join(out_pre, opt.dbSet, 'meanFeature', opt.set_name, 'mean_feature_'+ opt.vis_ftr_type+'.h5')
+    #pre_save_mean_data(dataset_ori, out_dict_name)
     
     for i in range(len(dataset_ori)):
         print('%d \ %d\n' %(i, len(dataset_ori)))
         index = dataset_ori.use_key_index[i]
-        cap_embedding, cap_length_list = dataset_ori.get_cap_emb(index, dataset_ori.capNum)
+        cap_embedding, cap_length_list, cap_Lbl = dataset_ori.get_cap_emb(index, dataset_ori.capNum)
         if cap_length_list[0]<=0:
             print('%d \%d\n' %(i, len(dataset_ori)))
             pdb.set_trace()
