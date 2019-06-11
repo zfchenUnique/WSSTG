@@ -8,8 +8,6 @@ def random_seeding(seed_value, use_cuda):
     if use_cuda: 
         torch.cuda.manual_seed_all(seed_value) # gpu vars
 
-seed_value = 4
-random_seeding(seed_value, True)
 
 from wsParamParser import parse_args
 from data.data_loader  import* 
@@ -26,6 +24,7 @@ import pdb
 
 if __name__=='__main__':
     opt = parse_args()
+    random_seeding(opt.seed, True)
     # build dataloader
     dataLoader, datasetOri= build_dataloader(opt) 
     # build network 
@@ -42,6 +41,7 @@ if __name__=='__main__':
         resultList_full = list()
         tBf = time.time() 
         for itr, inputData in enumerate(dataLoader):
+            #tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list, region_gt_ori = inputData
             tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
             #pdb.set_trace()
             dataIdx = None
@@ -61,7 +61,14 @@ if __name__=='__main__':
                 loss = lossEster(imFtr, txtFtr, vd_name_list)
                 resultList = evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
                 resultList_full +=resultList
-            if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
+            elif opt.wsMode =='coAtt' and opt.loss_type=='triplet_full':
+                simMM = model(imDis, wordEmb, cap_length_list)
+                #pdb.set_trace()
+                simMM = simMM.view(tmp_bsize,-1, tmp_bsize, opt.capNum)            
+                loss = lossEster(simMM=simMM, lblList =vd_name_list, region_gt_ori=region_gt_ori)
+
+            elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
+                #pdb.set_trace()
                 simMM = model(imDis, wordEmb, cap_length_list)
 #                pdb.set_trace()
                 simMM = simMM.view(tmp_bsize, opt.rpNum, tmp_bsize, opt.capNum)            
@@ -92,7 +99,7 @@ if __name__=='__main__':
                 loss = lossEster(logMat, word_lbl_list, simMM, vd_name_list)
                 resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
                 resultList_full +=resultList
-
+            #pdb.set_trace()
             if loss<=0:
                 continue
             optimizer.zero_grad()
@@ -101,15 +108,18 @@ if __name__=='__main__':
             optimizer.zero_grad()
             tNf = time.time() 
             if(itr%opt.visIter==0):
+                #resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
+                #resultList_full +=resultList
                 #tAf = time.time()
                 logger('Ep: %d, Iter: %d, T1: %3f, T2:%3f, loss: %3f\n' %(ep, itr, (tAf-tBf), (tNf-tAf)/opt.visIter,  float(loss.data.cpu().numpy())))
                 tBf = time.time()
                 writer.add_scalar('loss', loss.data.cpu()[0], ep*len(datasetOri)+itr*opt.batchSize)
                 accSum = 0
+                resultList = list()
                 for ele in resultList:
                     index, recall_k= ele
                     accSum +=recall_k
-                logger('Average accuracy on training batch is %3f\n' %(accSum/len(resultList)))
+                #logger('Average accuracy on training batch is %3f\n' %(accSum/len(resultList)))
             tBf = time.time() 
 
         ## evaluation within an epoch
@@ -122,11 +132,12 @@ if __name__=='__main__':
                 set_name_ori= opt.set_name
                 opt.set_name = 'val'
                 batchSizeOri = opt.batchSize
-                opt.batchSize = 8
+                opt.batchSize = 1
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
                 opt.batchSize = batchSizeOri 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
+                    #tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list, region_gt_ori = inputData
                     tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
                     #pdb.set_trace()
                     dataIdx = None
@@ -144,7 +155,7 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
+                    elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
@@ -183,12 +194,12 @@ if __name__=='__main__':
                 set_name_ori= opt.set_name
                 opt.set_name = 'test'
                 batchSizeOri = opt.batchSize
-                opt.batchSize = 8
+                opt.batchSize = 1
                 dataLoaderEval, datasetEvalOri = build_dataloader(opt) 
                 opt.batchSize = batchSizeOri 
                 #pdb.set_trace()
                 for itr_eval, inputData in enumerate(dataLoaderEval):
-                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_list = inputData
+                    tube_embedding, cap_embedding, tubeInfo, indexOri, cap_length_list, vd_name_list, word_lbl_lis   =inputData
                     #pdb.set_trace()
                     dataIdx = None
                     #pdb.set_trace()
@@ -205,7 +216,7 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4':
+                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
@@ -242,4 +253,4 @@ if __name__=='__main__':
         for ele in resultList_full:
             index, recall_k= ele
             accSum +=recall_k
-        writer.add_scalar('Average training accuracy', accSum/len(resultList_full), ep*len(datasetOri)+ itr*opt.batchSize)
+        #writer.add_scalar('Average training accuracy', accSum/len(resultList_full), ep*len(datasetOri)+ itr*opt.batchSize)
