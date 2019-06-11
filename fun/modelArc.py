@@ -42,7 +42,7 @@ class wsEmb(nn.Module):
             return imEnDis, wordEnDis
        
         #pdb.set_trace()
-        if  self.wsMode == 'coAtt' or self.wsMode == 'coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4':
+        if  self.wsMode == 'coAtt' or self.wsMode == 'coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4' or self.wsMode=='coAttBi':
             simMM = self.forwardCoAtt(imDis, wordEmb, capLengths)
             return simMM
 
@@ -424,7 +424,7 @@ class vlad_encoder(nn.Module):
         input_hidden = F.relu(input_hidden)
         input_hidden = input_hidden.unsqueeze(dim=3)
         input_hidden = input_hidden.transpose(dim0=1, dim1=2)
-        #pdb.set_trace()
+        pdb.set_trace()
         input_vlad = self.net_vlad(input_hidden)
         #pdb.set_trace()
         out_vlad = self.fc2(input_vlad)
@@ -455,7 +455,7 @@ def build_vis_seq_encoder(opts):
         vis_vlad_encoder = build_vis_vlad_encoder_v1(opts)
         return vis_vlad_encoder
     elif opts.vis_type == 'avgMIL':
-        vis_avg_encoder = build_vis_fc_encoder(opts)
+        vis_avg_encoder  = build_vis_fc_encoder(opts)
         return vis_avg_encoder
 
 def build_recontructor(opts):
@@ -479,6 +479,9 @@ def build_network(opts):
         wsEncoder = wsEmb(imEncoder, wordEncoder)
     elif opts.wsMode == 'coAtt':
         sst_Obj = SST(opts)
+        wsEncoder = wsEmb(sst_Obj, None)
+    elif opts.wsMode == 'coAttBi':
+        sst_Obj = SSTBi(opts)
         wsEncoder = wsEmb(sst_Obj, None)
     elif opts.wsMode == 'rankGroundR':
         imEncoder= build_vis_seq_encoder(opts)
