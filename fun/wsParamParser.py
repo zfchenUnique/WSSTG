@@ -39,7 +39,7 @@ class wsParamParser(BaseParser):
         self.add_argument('--stEp', default=0, type=int)
         self.add_argument('--keepKeyFrameOnly', action='store_true', default=False)
         self.add_argument('--visRsFd', default='../data/visResult/rank_', type=str)
-        self.add_argument('--logFdTx', default='../data/log/wsEmb', type=str)
+        self.add_argument('--logFdTx', default='../logs/wsEmb', type=str)
         self.add_argument('--set_name', default='train', type=str)
         self.add_argument('--isParal', action='store_true', default=False)
         self.add_argument('--capNum', default=1, type=int)
@@ -80,6 +80,9 @@ class wsParamParser(BaseParser):
         self.add_argument('--frm_level_flag', action='store_true', default=False)
         self.add_argument('--frm_num', type=int, default=1)
         self.add_argument('--att_exp', type=int, default=1)
+        self.add_argument('--loss_type', default='triplet_mil', type=str)
+        self.add_argument('--use_gt_region', action='store_true', default=False)
+        self.add_argument('--seed', default=0, type=int)
 
 
 def parse_args():
@@ -96,6 +99,8 @@ def parse_args():
     if args.entropy_regu_flag:
         struct_ann = struct_ann + '_lamda2_' + str(args.lamda2*10)
 
+    struct_ann + args.loss_type
+
     struct_ann = struct_ann + '_margin_'+ str(args.margin*10)+ '_att_exp' + str(args.att_exp)
 
     if args.vis_type =='vlad_v1':
@@ -105,8 +110,8 @@ def parse_args():
     if args.context_flag:
         struct_ann = struct_ann + '_context'
 
-    if args.wsMode == 'coAtt' or args.wsMode == 'coAttGroundR':
-        struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) 
+    if args.wsMode == 'coAtt' or args.wsMode == 'coAttGroundR' or args.wsMode == 'coAttBi':
+        struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) +'_seed_' + str(args.seed) 
 
     if args.frm_level_flag:
         struct_ann = struct_ann + '_frm_level_'
