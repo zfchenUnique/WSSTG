@@ -83,6 +83,7 @@ class wsParamParser(BaseParser):
         self.add_argument('--loss_type', default='triplet_mil', type=str)
         self.add_argument('--use_gt_region', action='store_true', default=False)
         self.add_argument('--seed', default=0, type=int)
+        self.add_argument('--update_iter', default=4, type=int)
 
 
 def parse_args():

@@ -102,10 +102,12 @@ if __name__=='__main__':
             #pdb.set_trace()
             if loss<=0:
                 continue
-            optimizer.zero_grad()
+            loss = loss/opt.update_iter
             loss.backward(retain_graph=True )
-            optimizer.step()
-            optimizer.zero_grad()
+            if (itr+1)%opt.update_iter==0:
+                optimizer.zero_grad()
+                optimizer.step()
+                optimizer.zero_grad()
             tNf = time.time() 
             if(itr%opt.visIter==0):
                 #resultList = evalAcc_att(simMM, tubeInfo, indexOri, datasetOri, opt.visRsFd+str(ep), False)
