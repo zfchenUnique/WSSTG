@@ -67,7 +67,7 @@ if __name__=='__main__':
                 simMM = simMM.view(tmp_bsize,-1, tmp_bsize, opt.capNum)            
                 loss = lossEster(simMM=simMM, lblList =vd_name_list, region_gt_ori=region_gt_ori)
 
-            elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
+            elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi' or opt.wsMode=='coAttBiV2':
                 #pdb.set_trace()
                 simMM = model(imDis, wordEmb, cap_length_list)
 #                pdb.set_trace()
@@ -105,7 +105,7 @@ if __name__=='__main__':
             loss = loss/opt.update_iter
             loss.backward(retain_graph=True )
             if (itr+1)%opt.update_iter==0:
-                optimizer.zero_grad()
+                #optimizer.zero_grad()
                 optimizer.step()
                 optimizer.zero_grad()
             tNf = time.time() 
@@ -157,7 +157,7 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
+                    elif opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi' or opt.wsMode=='coAttBiV2':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
@@ -218,7 +218,7 @@ if __name__=='__main__':
                         imFtr = imFtr.view(b_size, -1, opt.dim_ftr)
                         txtFtr = txtFtr.view(b_size, -1, opt.dim_ftr)
                         resultList += evalAcc(imFtr, txtFtr, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
-                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi':
+                    if opt.wsMode =='coAtt' or opt.wsMode =='coAttV2' or opt.wsMode=='coAttV3' or opt.wsMode=='coAttV4' or opt.wsMode=='coAttBi' or opt.wsMode=='coAttBiV2':
                         simMM = model(imDis, wordEmb, cap_length_list)
                         simMM = simMM.view(b_size, opt.rpNum, b_size)            
                         resultList += evalAcc_att(simMM, tubeInfo, indexOri, datasetEvalOri, opt.visRsFd+str(ep), False)
