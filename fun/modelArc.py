@@ -42,7 +42,7 @@ class wsEmb(nn.Module):
             return imEnDis, wordEnDis
        
         #pdb.set_trace()
-        if  self.wsMode == 'coAtt' or self.wsMode == 'coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4' or self.wsMode=='coAttBi':
+        if  self.wsMode == 'coAtt' or self.wsMode == 'coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4' or self.wsMode=='coAttBi' or self.wsMode=='coAttBiV2' or self.wsMode=='coAttBiV3':
             simMM = self.forwardCoAtt(imDis, wordEmb, capLengths)
             return simMM
 
@@ -483,6 +483,12 @@ def build_network(opts):
     elif opts.wsMode == 'coAttBi':
         sst_Obj = SSTBi(opts)
         wsEncoder = wsEmb(sst_Obj, None)
+    elif opts.wsMode == 'coAttBiV2':
+        sst_Obj = SSTBiV2(opts)
+        wsEncoder = wsEmb(sst_Obj, None)
+    elif opts.wsMode == 'coAttBiV3':
+        sst_Obj = SSTBiV3(opts)
+        wsEncoder = wsEmb(sst_Obj, None)
     elif opts.wsMode == 'rankGroundR':
         imEncoder= build_vis_seq_encoder(opts)
         wordEncoder = build_txt_encoder(opts)
@@ -513,7 +519,7 @@ def build_network(opts):
         wsEncoder= wsEncoder.cuda()
     if opts.initmodel is not None:
         md_stat = torch.load(opts.initmodel)
-        wsEncoder.load_state_dict(md_stat)
+        wsEncoder.load_state_dict(md_stat, strict=False)
     if opts.isParal:
         wsEncoder = nn.DataParallel(wsEncoder).cuda()
     

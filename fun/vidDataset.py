@@ -1,6 +1,7 @@
 import os
 import sys
 sys.path.append('..')
+sys.path.append('../../../WSSTL/fun')
 sys.path.append('../annotations')
 sys.path.append('../../annotations')
 import torch.utils.data as data
@@ -20,7 +21,7 @@ from wsParamParser import parse_args
 from ptd_api import *
 from vidDatasetParser import *
 from multiprocessing import Process, Pipe, cpu_count, Queue
-from vidDatasetParser import vidInfoParser
+#from vidDatasetParser import vidInfoParser
 from multiGraphAttention import extract_position_embedding 
 import h5py
 
@@ -48,8 +49,112 @@ class vidDataloader(data.Dataset):
         self.mean_cache_ftr_path = ''
         self.context_flag =False
         self.extracting_context =False
+        
 
-    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False, vis_ftr_type='rgb', i3d_ftr_path='', use_mean_cache_flag=False, mean_cache_ftr_path='', context_flag=False, ftr_context_path='', frm_level_flag=False, frm_num =1):
+    def get_gt_embedding_i3d(self, index, maxTubelegth, out_cached_folder = ''):
+        '''
+        get the grounding truth region embedding
+        '''
+        #pdb.set_trace()
+        rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+        flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+        set_name = self.set_name
+        i3d_ftr_path =  os.path.join(self.i3d_ftr_path[:-4], 'gt/vid',set_name, str(index) +'.h5')
+        if i3d_ftr_path in self.online_cache.keys() and self.i3d_cache_flag:
+            tube_embedding = self.online_cache[i3d_ftr_path]
+            return tube_embedding
+        h5_handle = h5py.File(i3d_ftr_path, 'r')
+        for tube_id in range(1):
+            rgb_tube_ftr = h5_handle[str(tube_id)]['rgb_feature'][()].squeeze()
+            flow_tube_ftr = h5_handle[str(tube_id)]['flow_feature'][()].squeeze()
+            num_tube_ftr = h5_handle[str(tube_id)]['num_feature'][()].squeeze()
+            seg_length = max(int(round(num_tube_ftr/maxTubelegth)), 1)
+            tmp_rgb_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+            tmp_flow_tube_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim_i3d), dtype=np.float32)
+            #pdb.set_trace()
+            for segId in range(maxTubelegth):
+                #print('%d %d\n' %(tube_id, segId))
+                start_id = segId*seg_length
+                end_id = (segId+1)*seg_length
+                if end_id > num_tube_ftr and num_tube_ftr < maxTubelegth:
+                    break
+                end_id = min((segId+1)*(seg_length), num_tube_ftr)
+                tmp_rgb_tube_embedding[segId, :] = np.mean(rgb_tube_ftr[start_id:end_id], axis=0)
+                tmp_flow_tube_embedding[segId, :] = np.mean(flow_tube_ftr[start_id:end_id], axis=0)
+                 
+            rgb_tube_embedding = tmp_rgb_tube_embedding
+            flow_tube_embedding = tmp_flow_tube_embedding
+       
+        tube_embedding = np.concatenate((rgb_tube_embedding, flow_tube_embedding), axis=1)
+        return tube_embedding
+
+
+    def get_gt_embedding(self, index, maxTubelegth, out_cached_folder = ''):
+        '''
+        get the grounding truth region embedding
+        '''
+        #pdb.set_trace()
+        gt_embedding = np.zeros((maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
+        set_name = self.set_name
+        ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
+        tube_info_path = os.path.join(self.tubePath, set_name, self.prp_type, str(index)+'.pd') 
+        tubeInfo = pickleload(tube_info_path)
+        tube_list, frame_list = tubeInfo
+        frmNum = len(frame_list)
+        seg_length = max(int(frmNum/maxTubelegth), 1)
+        
+        tube_to_prp_idx = list()
+        ftr_tube_list = list()
+        prp_range_num = len(tube_list[0])
+        tmp_cache_gt_feature_path = os.path.join(out_cached_folder, \
+                   'gt' , set_name, self.prp_type, str(index) + '.pk')
+        if os.path.isfile(tmp_cache_gt_feature_path):
+            tmp_gt_ftr_info = None
+            try:
+                tmp_gt_ftr_info = pickleload(tmp_cache_gt_feature_path)
+            except:
+                print('--------------------------------------------------')
+                print(tmp_cache_gt_feature_path)
+                print('--------------------------------------------------')
+            if tmp_gt_ftr_info is not None: 
+                return tmp_gt_ftr_info
+
+        # cache data for saving IO time
+        cache_data_dict ={}
+
+        for frmId, frmName  in enumerate(frame_list):
+            frmName = frame_list[frmId] 
+            img_prp_ftr_info_path = os.path.join(self.ftr_gt_path, self.set_name, str(index), frmName+ '.pd')
+            img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+            cache_data_dict[frmName] = img_prp_ftr_info
+            
+        for segId in range(maxTubelegth):
+            start_id = segId*seg_length
+            end_id = (segId+1)*seg_length
+            if end_id>frmNum and frmNum<maxTubelegth:
+                break
+            end_id = min((segId+1)*(seg_length), frmNum)
+            tmp_ftr = np.zeros((1, self.tube_ftr_dim), dtype=np.float32)
+            for frmId in range(start_id, end_id):
+                frm_name = frame_list[frmId]
+                if frm_name in cache_data_dict.keys():
+                    img_prp_ftr_info = cache_data_dict[frm_name]
+                else:
+                    img_prp_ftr_info_path = os.path.join(self.ftr_gt_path, self.set_name, str(index), frm_name+ '.pd')
+                    img_prp_ftr_info = pickleload(img_prp_ftr_info_path) 
+                    cache_data_dict[frm_name] = img_prp_ftr_info
+                tmp_ftr +=img_prp_ftr_info['roiFtr'][0]
+            gt_embedding[segId, :] = tmp_ftr/(end_id-start_id)
+        
+        if out_cached_folder !='':
+            dir_name = os.path.dirname(tmp_cache_gt_feature_path)
+            makedirs_if_missing(dir_name)
+            pickledump(tmp_cache_gt_feature_path, gt_embedding)
+
+        return gt_embedding
+
+
+    def image_samper_set_up(self, rpNum=20, capNum=1, maxWordNum=20, usedBadWord=False, pos_emb_dim=64, pos_type='aiayn', half_size=False, vis_ftr_type='rgb', i3d_ftr_path='', use_mean_cache_flag=False, mean_cache_ftr_path='', context_flag=False, ftr_context_path='', frm_level_flag=False, frm_num =1, region_gt_folder='../data', use_gt_region=False, ftr_gt_path=''):
         self.rpNum = rpNum
         self.maxWordNum = maxWordNum
         self.usedBadWord = usedBadWord
@@ -71,6 +176,14 @@ class vidDataloader(data.Dataset):
         self.frm_level_flag = frm_level_flag
         self.frm_num = frm_num
 
+        region_gt_folder_full_name = os.path.join(region_gt_folder, 'vid_' + self.set_name + '.pk')
+        if os.path.isfile(region_gt_folder_full_name):
+            region_gt_mat = pickleload(region_gt_folder_full_name)
+            self.region_gt_mat = region_gt_mat 
+
+        self.use_gt_region = use_gt_region  
+        self.ftr_gt_path = ftr_gt_path 
+
     def __len__(self):
         #return 20
         return len(self.vid_parser.tube_cap_dict)
@@ -90,7 +203,7 @@ class vidDataloader(data.Dataset):
             wordEmbMatrix[valCount, :]= self.dict['word2vec'][idx]
             valCount +=1
             wordLbl.append(idx)
-            print(word)
+            #print(word)
         return wordEmbMatrix, valCount, wordLbl
 
     def get_cap_emb(self, index, capNum):
@@ -111,6 +224,7 @@ class vidDataloader(data.Dataset):
         return wordEmbMatrix, cap_length_list, word_lbl_list
 
     def get_tube_embedding(self, index, maxTubelegth, out_cached_folder = ''):
+        #pdb.set_trace()
         tube_embedding = np.zeros((self.rpNum, maxTubelegth, self.tube_ftr_dim), dtype=np.float32)
         set_name = self.set_name
         ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
@@ -144,7 +258,6 @@ class vidDataloader(data.Dataset):
 
         # cache data for saving IO time
         cache_data_dict ={}
-
         for tubeId, tube in enumerate(tube_list[0]):
             if tubeId>= self.rpNum:
                 continue
@@ -389,15 +502,18 @@ class vidDataloader(data.Dataset):
         #    index = 23
         #else:
         #    index = 22 
-        index = 23
-        print('testing index %d\n' %(index))
+        #index = 23
+        #print('testing index %d\n' %(index))
+        #pdb.set_trace()
         sumInd = 0
         tube_embedding = None
         cap_embedding = None
         cap_length_list = -1
         tAf = time.time() 
         cap_embedding, cap_length_list, word_lbl_list = self.get_cap_emb(index, self.capNum)
-        tBf = time.time() 
+        tBf = time.time()
+
+        #region_gt_ori = self.region_gt_mat[indexOri]
         
         if self.use_mean_cache_flag:
             if self.vis_ftr_type=='rgb' or self.vis_ftr_type=='i3d':
@@ -425,7 +541,10 @@ class vidDataloader(data.Dataset):
             ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
             tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
             tubeInfo = pickleload(tube_info_path)
-            
+            pdb.set_trace()
+
+
+
             if self.pos_type !='none':
                 tp1 = time.time() 
                 #pdb.set_trace()
@@ -435,6 +554,7 @@ class vidDataloader(data.Dataset):
                 tube_embedding_pos = tube_embedding_pos.mean(1).unsqueeze(dim=1)
                 tube_embedding = torch.cat((tube_embedding, tube_embedding_pos), dim=2)
             
+            #pdb.set_trace()
             return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name, word_lbl_list
 
         cache_str_shot_str = str(self.maxTubelegth) +'_' + str(index)
@@ -499,14 +619,35 @@ class vidDataloader(data.Dataset):
             #print('extract pos time %f\n' %(tp2-tp1))
         #print('index: %d, caption: %f, visual: %f\n'%(indexOri,  tBf-tAf, tAf2-tBf))
         vd_name, ins_in_vd = self.vid_parser.get_shot_info_from_index(index)
-        return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name, word_lbl_list
+        if self.use_gt_region  and self.set_name=='train':
+            #pdb.set_trace()
+            gt_rgb_ftr = self.get_gt_embedding(index, self.maxTubelegth, self.out_cache_folder)
+            gt_i3d_ftr = self.get_gt_embedding_i3d(index, self.maxTubelegth, self.out_cache_folder) 
+            gt_rgb_ftr_pyt = torch.from_numpy(gt_rgb_ftr)  
+            gt_i3d_ftr_pyt = torch.from_numpy(gt_i3d_ftr) 
+            gt_ftr_pyt = torch.cat([gt_rgb_ftr_pyt, gt_i3d_ftr_pyt], dim=1)
+            tube_embedding = torch.cat([gt_ftr_pyt.unsqueeze(dim=0), tube_embedding], dim=0)
+            #region_gt_ori = np.concatenate((np.array([1]), region_gt_ori), axis=0)  
+        #return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name, word_lbl_list, region_gt_ori 
+        return tube_embedding, cap_embedding, tubeInfo, index, cap_length_list, vd_name, word_lbl_list 
 
     def get_tube_info(self, indexOri):
         index = self.use_key_index[indexOri]
+        pdb.set_trace()
         ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
         tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
         tubeInfo = pickleload(tube_info_path)
         return tubeInfo, index
+
+    def get_tube_info_gt(self, indexOri):
+        '''
+        get ground truth info 
+        '''
+        index = self.use_key_index[indexOri]
+        ins_ann, vd_name = self.vid_parser.get_shot_anno_from_index(index)
+        tube_info_path = os.path.join(self.tubePath, self.set_name, self.prp_type, str(index)+'.pd') 
+        tubeInfo = pickleload(tube_info_path)
+        return ins_ann, index, vd_name
 
     def get_frm_embedding(self, index):
         set_name = self.set_name
@@ -574,7 +715,11 @@ class vidDataloader(data.Dataset):
     def __getitem__(self, index):
         #index =0
         if not self.frm_level_flag:
-            return self.get_visual_item(index)
+            try:
+                return self.get_visual_item(index)
+            except:
+                print('failing to parse %d' %index)
+                return -1
         else:
             return self.get_visual_frm_item(index)                
 
@@ -589,6 +734,7 @@ def dis_collate_vid(batch):
     max_length = 0
     frm_idx_list = list()
     bbx_list = list()
+    region_gt_ori = list()
     for sample in batch:
         ftr_tube_list.append(sample[0])
         ftr_cap_list.append(torch.FloatTensor(sample[1]))
@@ -601,16 +747,19 @@ def dis_collate_vid(batch):
                 max_length = tmp_length
             cap_length_list.append(tmp_length)
         word_lbl_list.append(sample[6])
-        if len(sample)>7:
+        if len(sample)>8:
             frm_idx_list.append(sample[7])
             bbx_list.append(sample[8])
+
             #pdb.set_trace()
+        region_gt_ori.append(sample[-1])
     capMatrix = torch.stack(ftr_cap_list, 0)
     capMatrix = capMatrix[:, :, :max_length, :]
     if len(frm_idx_list)>0:
         return torch.stack(ftr_tube_list, 0), capMatrix, tube_info_list, index_list, cap_length_list, vd_name_list, word_lbl_list, frm_idx_list, bbx_list
     else:
-        return torch.stack(ftr_tube_list, 0), capMatrix, tube_info_list, index_list, cap_length_list, vd_name_list, word_lbl_list
+        #return torch.stack(ftr_tube_list, 0), capMatrix, tube_info_list, index_list, cap_length_list, vd_name_list, word_lbl_list, region_gt_ori 
+        return torch.stack(ftr_tube_list, 0), capMatrix, tube_info_list, index_list, cap_length_list, vd_name_list, word_lbl_list 
 
      
 if __name__=='__main__':

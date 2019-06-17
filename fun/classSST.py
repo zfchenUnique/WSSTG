@@ -16,6 +16,449 @@ import opts
 from classLSTMCore import LSTMCore
 import pdb
 
+class SSTBiV3(nn.Module):
+    def __init__(self, opt):
+        super(SSTBiV3, self).__init__()
+
+        self.word_cnt = opt.word_cnt
+        self.fc_feat_size = opt.fc_feat_size
+        self.video_embedding_size = opt.video_embedding_size
+        self.word_embedding_size = opt.word_embedding_size
+        self.lstm_hidden_size = opt.lstm_hidden_size
+        self.video_time_step = opt.video_time_step
+        self.caption_time_step = opt.caption_time_step
+        self.dropout_prob = opt.dropout_prob
+        self.n_anchors = opt.n_anchors
+        self.att_hidden_size = opt.att_hidden_size
+
+        self.video_embedding = nn.Linear(self.fc_feat_size, self.video_embedding_size)
+
+        self.lstm_video = torch.nn.LSTMCell(self.video_embedding_size, self.lstm_hidden_size, bias=True)
+        self.lstm_caption = torch.nn.LSTMCell(self.word_embedding_size, self.lstm_hidden_size, bias=True)
+
+
+        self.vid_linear = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+        self.sen_linear = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+
+        self.att_linear = nn.Linear(self.att_hidden_size, 1)
+
+        self.word_embedding = nn.Linear(300, self.word_embedding_size)
+        
+        self.vid_linear_v2 = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+        self.sen_linear_v2 = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+        self.att_linear_s2v = nn.Linear(self.att_hidden_size, 1)
+        
+        self.init_weights()
+
+    def init_weights(self):
+        initrange = 0.1
+        self.video_embedding.weight.data.uniform_(-initrange, initrange)
+        self.video_embedding.bias.data.fill_(0)
+
+        self.word_embedding.weight.data.uniform_(-initrange, initrange)
+        self.word_embedding.bias.data.fill_(0)
+        
+        self.vid_linear.weight.data.uniform_(-initrange, initrange)
+        self.vid_linear.bias.data.fill_(0)
+
+        self.sen_linear.weight.data.uniform_(-initrange, initrange)
+        self.sen_linear.bias.data.fill_(0)
+
+        self.att_linear.weight.data.uniform_(-initrange, initrange)
+        self.att_linear.bias.data.fill_(0)
+
+        self.vid_linear_v2.weight.data.uniform_(-initrange, initrange)
+        self.vid_linear_v2.bias.data.fill_(0)
+
+        self.sen_linear_v2.weight.data.uniform_(-initrange, initrange)
+        self.sen_linear_v2.bias.data.fill_(0)
+
+        self.att_linear_s2v.weight.data.uniform_(-initrange, initrange)
+        self.att_linear_s2v.bias.data.fill_(0)
+
+
+
+    def init_hidden(self, batch_size):
+        weight = next(self.parameters()).data
+        init_h = Variable(weight.new(1, batch_size, self.lstm_hidden_size).zero_())
+        init_c = Variable(weight.new(1, batch_size, self.lstm_hidden_size).zero_())
+        init_state = (init_h, init_c)
+
+        return init_state
+
+    def init_hidden_new(self, batch_size):
+        weight = next(self.parameters()).data
+        init_h = Variable(weight.new(batch_size, self.lstm_hidden_size).zero_())
+        init_c = Variable(weight.new(batch_size, self.lstm_hidden_size).zero_())
+        init_state = (init_h, init_c)
+
+        return init_state
+
+
+
+    # video_fc_feats: batch * encode_time_step * fc_feat_size
+    def forward(self, video_fc_feat, video_caption, cap_length_list=None):
+        #pdb.set_trace()
+        batch_size = video_fc_feat.size(0)
+        batch_size_caption = video_caption.size(0)
+
+        video_state = self.init_hidden_new(batch_size)
+        caption_state = self.init_hidden_new(batch_size_caption)
+
+        # 将 caption 用 LSTM 进行编码, 用来 soft attention
+        caption_outputs = []
+        caption_time_step = video_caption.size(1)
+        for i in range(caption_time_step):
+            word = video_caption[:, i].clone()
+            #if video_caption[:, i].data.sum() == 0:
+            #    break
+            #import ipdb
+            #pdb.set_trace()
+            caption_xt = self.word_embedding(word)
+            #caption_output, caption_state = self.lstm_caption.forward(caption_xt, caption_state)
+            caption_output, caption_state = self.lstm_caption.forward(caption_xt, caption_state)
+            caption_outputs.append(caption_output)
+            caption_state = (caption_output, caption_state)
+        # caption_outputs: batch * caption_time_step * lstm_hidden_size
+        caption_outputs = torch.cat([_.unsqueeze(1) for _ in caption_outputs], 1).contiguous()
+
+        # 将 video fc feat 用 LSTM 进行编码
+        video_outputs = []
+        for i in range(self.video_time_step):
+            video_xt = self.video_embedding(video_fc_feat[:, i, :])
+            video_output, video_state = self.lstm_video.forward(video_xt, video_state)
+            video_outputs.append(video_output)
+            video_state = (video_output, video_state)
+        # video_outputs: batch * video_time_step * lstm_hidden_size
+        video_outputs = torch.cat([_.unsqueeze(1) for _ in video_outputs], 1).contiguous()
+
+        # soft attention for caption based on each video
+        output_list = list()
+        for i in range(self.video_time_step):
+            # part 1
+            video_outputs_linear = self.vid_linear(video_outputs[:, i, :])
+            video_outputs_linear_expand = video_outputs_linear.expand(caption_outputs.size(1), video_outputs_linear.size(0),
+                                                                      video_outputs_linear.size(1)).transpose(0, 1)
+
+            # part 2
+            caption_outputs_flatten = caption_outputs.view(-1, self.lstm_hidden_size)
+            caption_outputs_linear = self.sen_linear(caption_outputs_flatten)
+            caption_outputs_linear = caption_outputs_linear.view(batch_size_caption, caption_outputs.size(1), self.att_hidden_size)
+
+            # part 1 and part 2 attention
+            sig_probs = []
+            for cap_id in range(batch_size_caption):
+                #pdb.set_trace()
+                cap_length = max(cap_length_list[cap_id], 1)
+                caption_output_linear_cap_id = caption_outputs_linear[cap_id, : cap_length, :]
+                video_outputs_linear_expand_clip = video_outputs_linear_expand[:, :cap_length, :]
+                caption_outputs_linear_cap_id_exp = caption_output_linear_cap_id.expand_as(video_outputs_linear_expand_clip) 
+                video_caption = F.tanh(video_outputs_linear_expand_clip \
+                        + caption_outputs_linear_cap_id_exp)
+                
+                video_caption_view = video_caption.contiguous().view(-1, self.att_hidden_size)
+                video_caption_out = self.att_linear(video_caption_view)
+                video_caption_out_view = video_caption_out.view(-1, cap_length)
+                #print(torch.min(video_caption_out_view))
+                atten_weights = nn.Softmax(dim=1)(video_caption_out_view).unsqueeze(2)
+
+                caption_output_cap_id = caption_outputs[cap_id, : cap_length, :]
+                caption_output_cap_id_exp = caption_output_cap_id.expand(batch_size,\
+                        caption_output_cap_id.size(0), caption_output_cap_id.size(1))
+                atten_caption = torch.bmm(caption_output_cap_id_exp.transpose(1, 2), atten_weights).squeeze(2)
+
+                video_caption_hidden = torch.cat((atten_caption, video_outputs[:, i, :]), dim=1)
+                #cur_probs = self.h2o(video_caption_hidden)
+                cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+                cur_probs = cos(atten_caption, video_outputs[: ,i, :]).unsqueeze(1)
+
+                sig_probs.append(cur_probs)
+
+            sig_probs = torch.cat([_ for _ in sig_probs], 1).contiguous()
+            output_list.append(sig_probs)
+        # batch_size * batch_size_caption 
+        simMMv2s = torch.stack(output_list, dim=2).mean(2)
+
+        # attention on word to video
+        output_list_v2 = list()
+        word_num = caption_outputs.shape[1]
+        # batch_size * video_time_step * att_hidden_size 
+        video_outputs_linear_v2 = self.vid_linear_v2(video_outputs)
+        for i in range(word_num):
+            # batch_size_caption * att_hidden_size 
+            caption_outputs_linear = self.sen_linear_v2(caption_outputs[:, i, :])
+            # batch_size_caption * video_time_step * att_hidden_size 
+            caption_outputs_linear_expand = caption_outputs_linear.expand(video_outputs.size(1), caption_outputs_linear.size(0),
+                                                                      caption_outputs_linear.size(1)).transpose(0, 1)
+
+            # part 1 and part 2 attention
+            sig_probs_v2 = []
+            for vid_id in range(batch_size):
+                #pdb.set_trace()
+                # video_time_step * att_hidden_size 
+                video_outputs_linear_vid_id = video_outputs_linear_v2[vid_id, : , :]
+                # batch_size_caption * video_time_step * att_hidden_size 
+                video_outputs_linear_vid_id_exp = video_outputs_linear_vid_id.expand_as(caption_outputs_linear_expand) 
+                # batch_size_caption * video_time_step * att_hidden_size 
+                caption_video = F.tanh(video_outputs_linear_vid_id_exp \
+                        + caption_outputs_linear_expand)
+                
+                # batch_size_caption * video_time_step 
+                caption_video_out = self.att_linear_s2v(caption_video)
+                # batch_size_caption * video_time_step 
+                atten_weights_s2v = nn.Softmax(dim=1)(caption_video_out)
+                #video_time_step * lstm_hidden_size  
+                video_output_vid_id = video_outputs[vid_id, : , :]
+                # batch_size_caption * video_time_step * lstm_hidden_size  
+                video_output_vid_id_exp = video_output_vid_id.expand(batch_size_caption,\
+                        video_output_vid_id.size(0), video_output_vid_id.size(1))
+                # batch_size_caption * lstm_hidden_size  
+                atten_video = torch.bmm(video_output_vid_id_exp.transpose(1, 2), atten_weights_s2v).squeeze(2)
+
+                cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+                # batch_size_caption  
+                cur_probs = cos(atten_video, caption_outputs[: ,i, :]).unsqueeze(1)
+                sig_probs_v2.append(cur_probs)
+            # batch_size_caption * batch_size
+            sig_probs_mat = torch.cat([_ for _ in sig_probs_v2], 1).contiguous()
+            output_list_v2.append(sig_probs_mat)
+        
+        # batch_size_caption * batch_size * word_num 
+        simMM_v2 = torch.stack(output_list_v2, dim=2)
+        # batch_size_caption * batch_size
+        sim_list_v2 = list()
+        for i, cap_length in enumerate(cap_length_list):
+            #  batch_size
+            sig_probs_mat = simMM_v2[i, :, :cap_length].mean(1)  
+            sim_list_v2.append(sig_probs_mat.unsqueeze(1))
+        # batch_size * batch_size_caption 
+        sim_word_2_v = torch.cat(sim_list_v2, 1)
+        simMM = 0.5 * ( simMMv2s + sim_word_2_v)
+        return simMM
+
+
+class SSTBiV2(nn.Module):
+    def __init__(self, opt):
+        super(SSTBiV2, self).__init__()
+
+        self.word_cnt = opt.word_cnt
+        self.fc_feat_size = opt.fc_feat_size
+        self.video_embedding_size = opt.video_embedding_size
+        self.word_embedding_size = opt.word_embedding_size
+        self.lstm_hidden_size = opt.lstm_hidden_size
+        self.video_time_step = opt.video_time_step
+        self.caption_time_step = opt.caption_time_step
+        self.dropout_prob = opt.dropout_prob
+        self.n_anchors = opt.n_anchors
+        self.att_hidden_size = opt.att_hidden_size
+
+        self.video_embedding = nn.Linear(self.fc_feat_size, self.video_embedding_size)
+
+        #self.lstm_video = LSTMCore(self.video_embedding_size, self.lstm_hidden_size, self.dropout_prob)
+        #self.lstm_caption = LSTMCore(self.word_embedding_size, self.lstm_hidden_size, self.dropout_prob)
+        self.lstm_video = torch.nn.LSTMCell(self.video_embedding_size, self.lstm_hidden_size, bias=True)
+        self.lstm_caption = torch.nn.LSTMCell(self.word_embedding_size, self.lstm_hidden_size, bias=True)
+
+
+        self.vid_linear = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+        self.sen_linear = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+
+        self.vid_linear_s2v = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+        self.sen_linear_s2v = nn.Linear(self.lstm_hidden_size, self.att_hidden_size)
+
+        self.att_linear_s2v = nn.Linear(self.att_hidden_size, 1)
+        self.att_linear = nn.Linear(self.att_hidden_size, 1)
+
+        self.h2o = nn.Linear(self.lstm_hidden_size * 2, self.n_anchors)
+
+        self.word_embedding = nn.Linear(300, self.word_embedding_size)
+        
+        self.grounder = nn.Sequential(
+                nn.Linear(self.att_hidden_size*2, self.att_hidden_size),
+                nn.ReLU(),
+                nn.Linear(self.att_hidden_size, 1))
+        self.init_weights()
+
+    def init_weights(self):
+        initrange = 0.1
+        self.video_embedding.weight.data.uniform_(-initrange, initrange)
+        self.video_embedding.bias.data.fill_(0)
+
+        self.word_embedding.weight.data.uniform_(-initrange, initrange)
+        self.word_embedding.bias.data.fill_(0)
+
+        # self.vocab_logit.weight.data.uniform_(-initrange, initrange)
+        # self.vocab_logit.bias.data.fill_(0)
+
+        self.vid_linear.weight.data.uniform_(-initrange, initrange)
+        self.vid_linear.bias.data.fill_(0)
+
+        self.sen_linear.weight.data.uniform_(-initrange, initrange)
+        self.sen_linear.bias.data.fill_(0)
+
+        self.att_linear_s2v.weight.data.uniform_(-initrange, initrange)
+        self.att_linear.bias.data.fill_(0)
+
+        self.h2o.weight.data.uniform_(-initrange, initrange)
+        self.h2o.bias.data.fill_(0)
+
+        self.vid_linear_s2v.weight.data.uniform_(-initrange, initrange)
+        self.vid_linear_s2v.bias.data.fill_(0)
+
+        self.sen_linear_s2v.weight.data.uniform_(-initrange, initrange)
+        self.sen_linear_s2v.bias.data.fill_(0)
+
+
+    def init_hidden(self, batch_size):
+        weight = next(self.parameters()).data
+        init_h = Variable(weight.new(1, batch_size, self.lstm_hidden_size).zero_())
+        init_c = Variable(weight.new(1, batch_size, self.lstm_hidden_size).zero_())
+        init_state = (init_h, init_c)
+
+        return init_state
+
+    def init_hidden_new(self, batch_size):
+        weight = next(self.parameters()).data
+        init_h = Variable(weight.new(batch_size, self.lstm_hidden_size).zero_())
+        init_c = Variable(weight.new(batch_size, self.lstm_hidden_size).zero_())
+        init_state = (init_h, init_c)
+
+        return init_state
+
+
+
+    def forward(self, video_fc_feat, video_caption, cap_length_list=None):
+    
+    # video_fc_feats: batch * encode_time_step * fc_feat_size
+        batch_size = video_fc_feat.size(0)
+        batch_size_caption = video_caption.size(0)
+
+        video_state = self.init_hidden_new(batch_size)
+        caption_state = self.init_hidden_new(batch_size_caption)
+
+        # 将 caption 用 LSTM 进行编码, 用来 soft attention
+        caption_outputs = []
+        caption_time_step = video_caption.size(1)
+        for i in range(caption_time_step):
+            word = video_caption[:, i].clone()
+            #if video_caption[:, i].data.sum() == 0:
+            #    break
+            #import ipdb
+            #pdb.set_trace()
+            caption_xt = self.word_embedding(word)
+            #caption_output, caption_state = self.lstm_caption.forward(caption_xt, caption_state)
+            caption_output, caption_state = self.lstm_caption.forward(caption_xt, caption_state)
+            caption_outputs.append(caption_output)
+            caption_state = (caption_output, caption_state)
+        # caption_outputs: batch * caption_time_step * lstm_hidden_size
+        caption_outputs = torch.cat([_.unsqueeze(1) for _ in caption_outputs], 1).contiguous()
+        #pdb.set_trace()
+        # caption feature
+        # (batch_size_caption*caption_time_step) * hidden_dim 
+        caption_outputs_flatten = caption_outputs.view(-1, self.lstm_hidden_size)
+        # (batch_size_caption*caption_time_step) * atten_hidden_dim 
+        caption_outputs_linear = self.sen_linear(caption_outputs_flatten)
+        # batch_size_caption * caption_time_step  * atten_hidden_dim 
+        caption_outputs_linear = caption_outputs_linear.view(batch_size_caption, caption_outputs.size(1), self.att_hidden_size)
+        # (batch_size_caption*caption_time_step) * atten_hidden_dim 
+        caption_outputs_linear_s2v = self.sen_linear_s2v(caption_outputs_flatten)
+        # batch_size_caption * caption_time_step  * atten_hidden_dim 
+        caption_outputs_linear_s2v = caption_outputs_linear_s2v.view(batch_size_caption, caption_outputs.size(1), self.att_hidden_size)
+
+
+        video_outputs = []
+        for i in range(self.video_time_step):
+            video_xt = self.video_embedding(video_fc_feat[:, i, :])
+            video_output, video_state = self.lstm_video.forward(video_xt, video_state)
+            video_outputs.append(video_output)
+            video_state = (video_output, video_state)
+        # video_outputs: batch * video_time_step * lstm_hidden_size
+        video_outputs = torch.cat([_.unsqueeze(1) for _ in video_outputs], 1).contiguous()
+
+        # batch_size * t_step * atten_hidden_dim 
+        video_outputs_linear_s2v = self.vid_linear_s2v(video_outputs)
+        
+        # soft attention for caption based on each video
+        output_list = list()
+        # attention on caption
+        atten_caption_list = list()
+        for i in range(self.video_time_step):
+            # video feature
+            # b_size * hidden_dim 
+            video_outputs_linear = self.vid_linear(video_outputs[:, i, :])
+            # b_size * caption_time_step * hidden_dim 
+            video_outputs_linear_expand = video_outputs_linear.expand(caption_outputs.size(1), video_outputs_linear.size(0),
+                                                    video_outputs_linear.size(1)).transpose(0, 1)
+
+            # part 1 and part 2 attention
+            sig_probs = []
+            for cap_id in range(batch_size_caption):
+                cap_length = max(cap_length_list[cap_id], 1)
+                # cap_length * atten_hidden_dim 
+                caption_output_linear_cap_id = caption_outputs_linear[cap_id, : cap_length, :]
+                # b_size * cap_length * atten_hidden_dim 
+                video_outputs_linear_expand_clip = video_outputs_linear_expand[:, :cap_length, :]
+                # b_size * cap_length * atten_hidden_dim 
+                caption_outputs_linear_cap_id_exp = caption_output_linear_cap_id.expand_as(video_outputs_linear_expand_clip) 
+                # b_size * cap_length * atten_hidden_dim 
+                video_caption = F.tanh(video_outputs_linear_expand_clip \
+                        + caption_outputs_linear_cap_id_exp)
+                
+                # (b_size * cap_length) * atten_hidden_dim 
+                video_caption_view = video_caption.contiguous().view(-1, self.att_hidden_size)
+                # (b_size * cap_length) 
+                video_caption_out = self.att_linear(video_caption_view)
+                # b_size * cap_length
+                video_caption_out_view = video_caption_out.view(-1, cap_length)
+                # batch_size * cap_length
+                atten_weights = nn.Softmax(dim=1)(video_caption_out_view).unsqueeze(2)
+                # cap_length * hidden_dim
+                caption_output_cap_id = caption_outputs[cap_id, : cap_length, :]
+                # batch_size * cap_length * hidden_dim
+                caption_output_cap_id_exp = caption_output_cap_id.expand(batch_size,\
+                        caption_output_cap_id.size(0), caption_output_cap_id.size(1))
+                # batch_size * hidden_dim
+                atten_caption = torch.bmm(caption_output_cap_id_exp.transpose(1, 2), atten_weights).squeeze(2)
+                atten_caption_list.append(atten_caption)
+
+                tmp_word_sim_list = list()
+                # calculate the video attention given a word
+                for word_id in range(cap_length):
+                    # atten_hidden_dim
+                    caption_outputs_linear_s2v_word = caption_outputs_linear_s2v[cap_id, word_id]   
+                    # b_size * t_step * atten_hidden_dim 
+                    caption_outputs_linear_s2v_word_exp = caption_outputs_linear_s2v_word.expand_as(video_outputs_linear_s2v)   
+                    # b_size * t_step * atten_hidden_dim 
+                    caption_video = F.tanh(caption_outputs_linear_s2v_word\
+                            + video_outputs_linear_s2v)
+                    # (b_size * t_step) * atten_hidden_dim 
+                    caption_video_view = caption_video.contiguous().view(-1, self.att_hidden_size)
+                    # (b_size * t_step) 
+                    caption_video_out = self.att_linear_s2v(caption_video_view)
+                    # b_size * t_step
+                    caption_video_out_view = caption_video_out.view(-1, self.video_time_step)
+                    # batch_size * t_step
+                    atten_weights_s2v = nn.Softmax(dim=1)(caption_video_out_view).unsqueeze(2)
+                    # batch_size * hidden_dim
+                    atten_video = torch.bmm(video_outputs.transpose(1, 2), atten_weights_s2v).squeeze(2)
+
+                    #cos = nn.CosineSimilarity(dim=1, eps=1e-6)
+                    # batch_size
+                    video_caption_hidden = torch.cat((atten_caption, atten_video), dim=1)
+                    word_sim = self.grounder(video_caption_hidden).unsqueeze(1)
+                    tmp_word_sim_list.append(word_sim)
+                # batch_size 
+                cur_probs = torch.cat(tmp_word_sim_list, 1).contiguous().mean(1).unsqueeze(1)
+                sig_probs.append(cur_probs)
+
+            sig_probs = torch.cat([_ for _ in sig_probs], 1).contiguous()
+            output_list.append(sig_probs)
+        simMM = torch.stack(output_list, dim=2).mean(2)
+        print(atten_weights_s2v[0])
+        #pdb.set_trace()
+        return simMM
+
+
 
 class SSTBi(nn.Module):
     def __init__(self, opt):
