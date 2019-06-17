@@ -1,4 +1,4 @@
-CUDA_VISIBLE_DEVICES=2 python  ../fun/train.py --epSize 30 \
+CUDA_VISIBLE_DEVICES=0 python  ../fun/train.py --epSize 30 \
     --seed 0\
     --dbSet vid \
     --maxWordNum 20 --num_workers 3  --batchSize 3  --logFd  ../data/log/pm_resume_  \
@@ -18,7 +18,7 @@ CUDA_VISIBLE_DEVICES=2 python  ../fun/train.py --epSize 30 \
     --stEp 0 \
     --optimizer sgd \
     --entropy_regu_flag --lamda2 1   \
-    --wsMode coAttBiV2 \
+    --wsMode coAttBiV3 \
     --update_iter 4
     #--initmodel ../data/final_models/coAttV1_ep_18_lamda_1_ver.pth \
     #--loss_type  triplet_full  \
