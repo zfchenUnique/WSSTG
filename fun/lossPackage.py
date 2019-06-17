@@ -39,7 +39,7 @@ class lossEvaluator(nn.Module):
             return loss
         if self.wsMode=='rankTube' or self.wsMode=='rankFrm':
             loss = self.forwardRank(imFtr, disFtr, lblList)
-        elif self.wsMode=='coAtt' or self.wsMode =='coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4' or self.wsMode=='coAttBi':
+        elif self.wsMode=='coAtt' or self.wsMode =='coAttV2' or self.wsMode=='coAttV3' or self.wsMode=='coAttV4' or self.wsMode=='coAttBi' or self.wsMode=='coAttBiV2' or self.wsMode=='coAttBiV3':
             #loss = self.forwardCoAtt(simMM, lblList)
             loss = self.forwardCoAtt_efficient(simMM, lblList)
             #print(loss-loss_e)
@@ -518,7 +518,7 @@ class lossGroundR(nn.Module):
         return loss
 
 def build_lossEval(opts):
-    if opts.wsMode == 'rankTube' or opts.wsMode=='coAtt' or opts.wsMode=='coAttV2' or opts.wsMode=='coAttV3' or opts.wsMode == 'coAttV4' or  opts.wsMode=='rankFrm' or opts.wsMode=='coAttBi':
+    if opts.wsMode == 'rankTube' or opts.wsMode=='coAtt' or opts.wsMode=='coAttV2' or opts.wsMode=='coAttV3' or opts.wsMode == 'coAttV4' or  opts.wsMode=='rankFrm' or opts.wsMode=='coAttBi' or opts.wsMode=='coAttBiV2' or opts.wsMode =='coAttBiV3':
         loss_criterion = lossEvaluator(opts.margin, opts.biLoss, opts.lossW, \
                 opts.lamda, opts.struct_flag, opts.struct_only, \
                 opts.entropy_regu_flag, opts.lamda2, \
