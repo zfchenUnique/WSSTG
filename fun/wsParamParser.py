@@ -112,15 +112,16 @@ def parse_args():
         struct_ann = struct_ann + '_context'
 
     if args.wsMode == 'coAtt' or args.wsMode == 'coAttGroundR' or args.wsMode == 'coAttBi':
-        struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) +'_seed_' + str(args.seed) 
+        struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) 
+    
 
     if args.frm_level_flag:
         struct_ann = struct_ann + '_frm_level_'
 
     if args.lossW:
         struct_ann = struct_ann + 'weak_weight_'+str(args.lamda*10)
-
-
+    
+    struct_ann += '_seed_' + str(args.seed) 
 
     args.logFd = args.logFd +'_bs_'+str(args.batchSize) + '_tn_' + str(args.rpNum) \
             +'_wl_' +str(args.maxWordNum) + '_cn_' + str(args.capNum) +'_fd_'+ str(args.dim_ftr) \
