@@ -5,13 +5,11 @@ from util.base_parser import BaseParser
 class wsParamParser(BaseParser):
     def __init__(self, *arg_list, **arg_dict):
         super(wsParamParser, self).__init__(*arg_list, **arg_dict)
-        self.add_argument('--l1', default=1., type=float)
-        self.add_argument('--l2', default=2., type=float)
+        self.add_argument('--batchSize', default=16, type=int)
         self.add_argument('--dim_ftr', default=128, type=int)
         self.add_argument('--n_pairs', default=50, type=int)
         self.add_argument('--initmodel', default=None)
         self.add_argument('--resume', default='')
-        self.add_argument('--batchSize', default=16, type=int)
         self.add_argument('--gpu', default=1, type=int)
         self.add_argument('--decay', default=0.001, type=float)
         self.add_argument('--optimizer', default='sgd', type=str)
@@ -58,22 +56,17 @@ class wsParamParser(BaseParser):
         self.add_argument('--eval_val_flag', action='store_true', default=False)
         self.add_argument('--eval_test_flag', action='store_true', default=False)
         self.add_argument('--entropy_regu_flag', action='store_true', default=False)
-        self.add_argument('--lamda2', default=0.1, type=float)
         self.add_argument('--hidden_dim', default=128, type=int)
         self.add_argument('--centre_num', default=32, type=int)
         self.add_argument('--vlad_alpha', default=1.0, type=float)
         self.add_argument('--cache_flag', action='store_true', default=False)
         self.add_argument('--use_mean_cache_flag', action='store_true', default=False)
-        self.add_argument('--dropout_prob', type=float, default=0.1)
         self.add_argument('--batch_size', type=int, default=64)
-        self.add_argument('--video_time_step', type=int, default=20) #tacos300 DDM 6
-        self.add_argument('--caption_time_step', type=int, default=20) # tacos65 DDM 15
         self.add_argument('--video_embedding_size', type=int, default=512)
         self.add_argument('--fc_feat_size', type=int, default=2048)
         self.add_argument('--word_embedding_size', type=int, default=512)
         self.add_argument('--lstm_hidden_size', type=int, default=512)
         self.add_argument('--att_hidden_size', type=int, default=512)
-        self.add_argument('--n_anchors', type=int, default=1)
         self.add_argument('--word_cnt', type=int, default=20)
         self.add_argument('--context_flag', action='store_true', default=False)
         self.add_argument('--no_shuffle_flag', action='store_true', default=False)
@@ -81,9 +74,12 @@ class wsParamParser(BaseParser):
         self.add_argument('--frm_num', type=int, default=1)
         self.add_argument('--att_exp', type=int, default=1)
         self.add_argument('--loss_type', default='triplet_mil', type=str)
-        self.add_argument('--use_gt_region', action='store_true', default=False)
         self.add_argument('--seed', default=0, type=int)
         self.add_argument('--update_iter', default=4, type=int)
+        self.add_argument('--lamda2', default=1, type=float)
+        self.add_argument('--video_time_step', type=int, default=20) 
+        self.add_argument('--caption_time_step', type=int, default=20) # tacos65 DDM 15
+        self.add_argument('--dropout_prob', type=float, default=0.1)
 
 
 def parse_args():
@@ -103,17 +99,12 @@ def parse_args():
     struct_ann + args.loss_type
 
     struct_ann = struct_ann + '_margin_'+ str(args.margin*10)+ '_att_exp' + str(args.att_exp)
-
-    if args.vis_type =='vlad_v1':
-        struct_ann = struct_ann + '_centre_' + str(args.centre_num) \
-                + '_hidden_dim_' + str(args.hidden_dim)
     
     if args.context_flag:
         struct_ann = struct_ann + '_context'
 
-    if args.wsMode == 'coAtt' or args.wsMode == 'coAttGroundR' or args.wsMode == 'coAttBi':
+    if args.wsMode == 'coAtt':
         struct_ann = struct_ann + 'lstm_hd_' + str(args.lstm_hidden_size) 
-    
 
     if args.frm_level_flag:
         struct_ann = struct_ann + '_frm_level_'
@@ -140,5 +131,6 @@ def parse_args():
             + '_' + str(args.wsMode) +'_' +str(args.vis_type)+ '_' + str(args.pos_type) +'_' + \
             half_size +'_txt_'+ str(args.txt_type) + '_' + str(args.vis_ftr_type) + '_lr_' + \
             str(args.lr*100000) + '_' + str(args.dbSet) + struct_ann
+    
     args.visRsFd = args.visRsFd + args.dbSet + '_'
     return args
