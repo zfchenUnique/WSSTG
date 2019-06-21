@@ -1,13 +1,13 @@
-CUDA_VISIBLE_DEVICES=0 python  ../fun/train.py --epSize 30 \
+CUDA_VISIBLE_DEVICES=2 python  ../fun/train.py --epSize 30 \
     --seed 0\
     --dbSet vid \
-    --maxWordNum 20 --num_workers 3  --batchSize 3  --logFd  ../data/log/pm_resume_  \
+    --maxWordNum 20 --num_workers 0  --batchSize 3  --logFd  ../data/log/pm_resume_  \
     --outPre ../data/acc_grad --biLoss \
     --hdSize 300  --vwFlag  --stEp 0  --logFdTx ../data/tensorBoardX/pm_resume_ \
     --vis_dim 4096 --set_name train\
     --rpNum 30 --saveEp 1 \
     --txt_type lstm --pos_type none \
-    --lr 0.001 \
+    --lr 0 \
     --vis_ftr_type rgb_i3d \
     --margin 1 \
     --vis_type lstm \
@@ -18,7 +18,5 @@ CUDA_VISIBLE_DEVICES=0 python  ../fun/train.py --epSize 30 \
     --stEp 0 \
     --optimizer sgd \
     --entropy_regu_flag --lamda2 1   \
-    --wsMode coAttBiV3 \
-    --update_iter 4
-    #--initmodel ../data/final_models/coAttV1_ep_18_lamda_1_ver.pth \
-    #--loss_type  triplet_full  \
+    --wsMode coAtt \
+    --update_iter 4 \
