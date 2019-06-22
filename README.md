@@ -1,7 +1,7 @@
 # Weakly-Supervised Spatio-Temporally Grounding Natural Sentence in Video  
 
 This repo contains the main baselines of VID-sentence dataset introduced in WSSTG.
-Please refer our paper and the repo for the information of VID-sentence dataset.
+Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](https://github.com/JeffCHEN2017/VID-sentence-private) for the information of VID-sentence dataset.
 
 
 ### Task
@@ -13,7 +13,7 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 <img src="images/task.png" alt="task" width="500px">
 </p>
 <p align="center">
-<figcaption>The proposed WSSTG task aims to localize a spatio-temporal tube (ie, the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training.</figcaption>
+<figcaption>The proposed WSSTG task aims to localize a spatio-temporal tube (i.e., the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training.</figcaption>
 </p>
 
 ### Architecture
@@ -27,13 +27,13 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 
 ### Contents
 1. [Requirements: software](#requirements-software)
-3. [Installation](#installation)
-4. [Training](#Training)
-5. [Testing](#Testing)
+2. [Installation](#installation)
+3. [Training](#Training)
+4. [Testing](#Testing)
 
 ### Requirements: software
-Pytorch (version=0.4.0)
-python 3.6 
+- Pytorch (version=0.4.0)
+- python 3.6 
 
 ### Installation
 
@@ -47,8 +47,9 @@ python 3.6
   ```Shell
   
   ```
-  Notice: We extract the tube proposals using the method proposed by [].A python implementation can be found at [here]().
-  We extract RGB feature for each frame using faster-RCNN model provided by [xxx]().
+  Note: We extract the tube proposals using the method proposed by [Gkioxari and Malik](https://arxiv.org/abs/1411.6031) .A python implementation [here](ttps://www.mi.t.u-tokyo.ac.jp/projects/person_search/) is provided by Yamaguchi etal..
+
+  We extract singel-frame propsoals and RGB feature for each frame using a [faster-RCNN](https://arxiv.org/abs/1506.01497) model pretrained on COCO dataset, which is provided by [Jianwei Yang](https://github.com/jwyang/faster-rcnn.pytorch).
   We extract I3D-RGB and I3D-flow features using the model provided by [xxx]().
 3. Making softlinks between the download data and the desired data folder
 ```Shell
@@ -59,7 +60,7 @@ $'WSSTG_ROOT/data'
 ```Shell
 $'WSSTG_ROOT/data'
 ```
-Because the changes of batch sizes and the random seed, the performance may be slightly different from our submission. We provide a checkpoint here which achieves similar performance (VS) to the model we report in the paper.
+Notice: Because the changes of batch sizes and the random seed, the performance may be slightly different from our submission. We provide a checkpoint here which achieves similar performance (VS) to the model we report in the paper.
 
 ### Testing
 Download the checkpoint here and run
@@ -69,7 +70,7 @@ $'WSSTG_ROOT/data'
 
 ### License
 
-WSSTG is released under the MIT License (refer to the LICENSE file for details).
+WSSTG is released under the CC-BY-NC 4.0 LICENSE (refer to the LICENSE file for details).
 
 ### Citing WSSTG
 
