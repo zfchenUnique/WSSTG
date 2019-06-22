@@ -66,14 +66,16 @@ ln -s vid_rgb $WSSTG_ROOT/data/vid_rgb
 
 ### Training
 ```Shell
-$'WSSTG_ROOT/data'
+cd $'WSSTG_ROOT'
+sh scripts/train_video_emb_att.sh
 ```
 Notice: Because the changes of batch sizes and the random seed, the performance may be slightly different from our submission. We provide a checkpoint here which achieves similar performance (VS) to the model we report in the paper.
 
 ### Testing
 Download the checkpoint here and run
 ```Shell
-$'WSSTG_ROOT/data'
+cd $'WSSTG_ROOT'
+sh scripts/train_video_emb_att.sh
 ```
 
 ### License
@@ -90,9 +92,6 @@ If you find this repo useful in your research, please consider citing:
         Booktitle={ACL},
         year={2019}
     }
-
-### Acknowledgement
-Some codes are borrowed/ inspired from [Yamaguchi etal.](https://www.mi.t.u-tokyo.ac.jp/projects/person_search/)
 
 ### Contact
 
