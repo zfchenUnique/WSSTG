@@ -23,7 +23,7 @@ If you find this repo useful in your research, please consider citing:
 <p align="center">
 <figcaption>Description: "A brown and white dog is lying on the grass and then it stands up."</figcaption>
 <img src="images/task.png" alt="task" width="500px">
-<figcaption>"task"</figcaption>
+<figcaption>"The proposed WSSTG task aims to localize a spatio-temporal tube (ie,~the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training."</figcaption>
 </p>
 
 ### Architecture
