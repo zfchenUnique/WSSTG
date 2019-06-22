@@ -21,7 +21,8 @@ If you find this repo useful in your research, please consider citing:
 ### Task
 
 <p align="center">
-<img src="images/task.png" alt="method compare" width="500px">
+<img src="images/task.png" alt="task" width="500px">
+<figcaption>"task"</figcaption>
 </p>
 
 ### Architecture
