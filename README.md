@@ -36,7 +36,7 @@ python 3.6
   git clone https://github.com/JeffCHEN2017/VID-Sentence-private.git
   ```
 
-2. Download the extracted tube features ( i.e. RGB feature and I3D feature)
+2. Download the extracted tubes and the corresponding features ( i.e. RGB feature and I3D feature)
   ```Shell
   
   ```
