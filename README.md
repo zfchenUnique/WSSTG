@@ -21,6 +21,7 @@ If you find this repo useful in your research, please consider citing:
 ### Task
 
 <p align="center">
+<figcaption>"A brown and white dog is lying on the grass and then it stands up."</figcaption>
 <img src="images/task.png" alt="task" width="500px">
 <figcaption>"task"</figcaption>
 </p>
