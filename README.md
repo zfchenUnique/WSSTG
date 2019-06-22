@@ -8,7 +8,11 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 
 <p align="center">
 <figcaption>Description: "A brown and white dog is lying on the grass and then it stands up."</figcaption>
+</p>
+<p align="center">
 <img src="images/task.png" alt="task" width="500px">
+</p>
+<p align="center">
 <figcaption>The proposed WSSTG task aims to localize a spatio-temporal tube (ie, the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training.</figcaption>
 </p>
 
@@ -16,7 +20,9 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 
 <p align="center">
 <img src="images/frm.png" alt="method compare" width="500px">
-<figcaption>The architecture of the proposed method</figcaption>
+</p>
+<p align="center">
+<figcaption>The architecture of the proposed method.</figcaption>
 </p>
 
 ### Contents
