@@ -1,11 +1,14 @@
 # Weakly-Supervised Spatio-Temporally Grounding Natural Sentence in Video  
+
 This repo contains the main baselines of VID-sentence dataset introduced in WSSTG.
-Please refer this repo and our paper for the information of VID-sentence dataset.
+Please refer our paper and the repo for the information of VID-sentence dataset.
 
 ### License
+
 WSSTG is released under the MIT License (refer to the LICENSE file for details).
 
 ### Citing WSSTG
+
 If you find this repo useful in your research, please consider citing:
 
     @inproceedings{chen2019weakly,
@@ -16,11 +19,13 @@ If you find this repo useful in your research, please consider citing:
     }
 
 ### Task
+
 <p align="center">
 <img src="images/task.png" alt="method compare" width="500px">
 </p>
+
 ### Architecture
+
 <p align="center">
 <img src="images/frm.png" alt="method compare" width="500px">
 </p>
-### 
