@@ -66,7 +66,7 @@ ln -s vid_rgb $WSSTG_ROOT/data/vid_rgb
 
 ### Training
 ```Shell
-cd $'WSSTG_ROOT'
+cd $WSSTG_ROOT
 sh scripts/train_video_emb_att.sh
 ```
 Notice: Because the changes of batch sizes and the random seed, the performance may be slightly different from our submission. We provide a checkpoint here which achieves similar performance (VS) to the model we report in the paper.
@@ -74,7 +74,7 @@ Notice: Because the changes of batch sizes and the random seed, the performance 
 ### Testing
 Download the checkpoint here and run
 ```Shell
-cd $'WSSTG_ROOT'
+cd $WSSTG_ROOT
 sh scripts/test_video_emb_att.sh
 ```
 
