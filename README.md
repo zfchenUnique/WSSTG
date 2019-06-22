@@ -16,6 +16,7 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 
 <p align="center">
 <img src="images/frm.png" alt="method compare" width="500px">
+<figcaption>The architecture of the proposed method</figcaption>
 </p>
 
 ### Contents
