@@ -19,7 +19,7 @@ Please refer our paper and the repo for the information of VID-sentence dataset.
 ### Architecture
 
 <p align="center">
-<img src="images/frm.png" alt="method compare" width="500px">
+<img src="images/frm.png" alt="architecture" width="500px">
 </p>
 <p align="center">
 <figcaption>The architecture of the proposed method.</figcaption>
