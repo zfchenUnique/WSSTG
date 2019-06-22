@@ -32,30 +32,37 @@ Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](htt
 4. [Testing](#Testing)
 
 ### Requirements: software
+
 - Pytorch (version=0.4.0)
 - python 3.6 
 
 ### Installation
 
 1. Clone the WSSTG repository and VID-sentence reposity
-  ```Shell
+
+```Shell
   git clone https://github.com/JeffCHEN2017/WSSTL-private.git
   git clone https://github.com/JeffCHEN2017/VID-Sentence-private.git
-  ```
+```
+2. Download [tube proposals](), [RGB feature]() and [I3D feature]() from Google Drive.
 
-2. Download the extracted tubes and the corresponding features ( i.e. RGB feature and I3D feature)
-  ```Shell
-  
-  ```
+3. Extract  *.tar files and make symlinks between the download data and the desired data folder
+
+```Shell
+tar xvf tubePrp.tar
+ln -s tubePrp $WSSTG_ROOT/data/tubePrp
+
+tar xvf vid_i3d.tar vid_i3d
+ln -s vid_i3d $WSSTG_ROOT/data/vid_i3d
+
+tar xvf vid_rgb.tar vid_rgb
+ln -s vid_rgb $WSSTG_ROOT/data/vid_rgb
+```
+
   Note: We extract the tube proposals using the method proposed by [Gkioxari and Malik](https://arxiv.org/abs/1411.6031) .A python implementation [here](ttps://www.mi.t.u-tokyo.ac.jp/projects/person_search/) is provided by Yamaguchi etal..
-
   We extract singel-frame propsoals and RGB feature for each frame using a [faster-RCNN](https://arxiv.org/abs/1506.01497) model pretrained on COCO dataset, which is provided by [Jianwei Yang](https://github.com/jwyang/faster-rcnn.pytorch).
   We extract [I3D-RGB and I3D-flow features](https://arxiv.org/abs/1705.07750) using the model provided by [Carreira and Zisserman](https://github.com/deepmind/kinetics-i3d.git).
 
-3. Making softlinks between the download data and the desired data folder
-```Shell
-$'WSSTG_ROOT/data'
-```
 
 ### Training
 ```Shell
