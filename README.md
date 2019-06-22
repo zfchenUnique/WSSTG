@@ -80,7 +80,7 @@ If you find this repo useful in your research, please consider citing:
     }
 
 ### Acknowledgement
-
+Some codes are borrowed/ inspired from [Yamaguchi etal.](https://www.mi.t.u-tokyo.ac.jp/projects/person_search/)
 
 ### Contact
 
