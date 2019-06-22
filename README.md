@@ -3,6 +3,21 @@
 This repo contains the main baselines of VID-sentence dataset introduced in WSSTG.
 Please refer our paper and the repo for the information of VID-sentence dataset.
 
+
+### Task
+
+<p align="center">
+<figcaption>Description: "A brown and white dog is lying on the grass and then it stands up."</figcaption>
+<img src="images/task.png" alt="task" width="500px">
+<figcaption>The proposed WSSTG task aims to localize a spatio-temporal tube (ie, the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training.</figcaption>
+</p>
+
+### Architecture
+
+<p align="center">
+<img src="images/frm.png" alt="method compare" width="500px">
+</p>
+
 ### License
 
 WSSTG is released under the MIT License (refer to the LICENSE file for details).
@@ -17,17 +32,3 @@ If you find this repo useful in your research, please consider citing:
         Booktitle={ACL},
         year={2019}
     }
-
-### Task
-
-<p align="center">
-<figcaption>Description: "A brown and white dog is lying on the grass and then it stands up."</figcaption>
-<img src="images/task.png" alt="task" width="500px">
-<figcaption>The proposed WSSTG task aims to localize a spatio-temporal tube (ie,~the sequence of green bounding boxes) in the video which semantically corresponds to the given sentence, with no reliance on any spatio-temporal annotations during training.</figcaption>
-</p>
-
-### Architecture
-
-<p align="center">
-<img src="images/frm.png" alt="method compare" width="500px">
-</p>
