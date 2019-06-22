@@ -47,6 +47,9 @@ python 3.6
   ```Shell
   
   ```
+  Notice: We extract the tube proposals using the method proposed by [].A python implementation can be found at [here]().
+  We extract RGB feature for each frame using faster-RCNN model provided by [xxx]().
+  We extract I3D-RGB and I3D-flow features using the model provided by [xxx]().
 3. Making softlinks between the download data and the desired data folder
 ```Shell
 $'WSSTG_ROOT/data'
