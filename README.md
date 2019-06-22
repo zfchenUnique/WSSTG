@@ -19,10 +19,10 @@ Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](htt
 ### Architecture
 
 <p align="center">
-<img src="images/frm.png" alt="architecture" width="500px">
+<figcaption>The architecture of the proposed method.</figcaption>
 </p>
 <p align="center">
-<figcaption>The architecture of the proposed method.</figcaption>
+<img src="images/frm.png" alt="architecture" width="500px">
 </p>
 
 ### Contents
