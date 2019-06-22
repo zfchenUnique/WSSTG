@@ -75,7 +75,7 @@ Notice: Because the changes of batch sizes and the random seed, the performance 
 Download the checkpoint here and run
 ```Shell
 cd $'WSSTG_ROOT'
-sh scripts/train_video_emb_att.sh
+sh scripts/test_video_emb_att.sh
 ```
 
 ### License
