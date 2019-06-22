@@ -51,6 +51,7 @@ Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](htt
 
   We extract singel-frame propsoals and RGB feature for each frame using a [faster-RCNN](https://arxiv.org/abs/1506.01497) model pretrained on COCO dataset, which is provided by [Jianwei Yang](https://github.com/jwyang/faster-rcnn.pytorch).
   We extract [I3D-RGB and I3D-flow features](https://arxiv.org/abs/1705.07750) using the model provided by [Carreira and Zisserman](https://github.com/deepmind/kinetics-i3d.git).
+
 3. Making softlinks between the download data and the desired data folder
 ```Shell
 $'WSSTG_ROOT/data'
