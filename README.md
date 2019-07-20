@@ -34,17 +34,26 @@ Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](htt
 ### Requirements: software
 
 - Pytorch (version=0.4.0)
-- python 3.6 
+- python  2.7 
+- numpy
+- scipy
+- magic
+- easydict
+- dill
+- matplotlib
+- tensorboardX
+
 
 ### Installation
 
 1. Clone the WSSTG repository and VID-sentence reposity
 
 ```Shell
-  git clone https://github.com/JeffCHEN2017/WSSTL-private.git
-  git clone https://github.com/JeffCHEN2017/VID-Sentence-private.git
+    git clone https://github.com/JeffCHEN2017/WSSTL-private.git
+    git clone https://github.com/JeffCHEN2017/VID-Sentence-private.git
+    ln -s VID-sentence_ROOT/data/ILSVRC WSSTG_ROOT/data
 ```
-2. Download [tube proposals](), [RGB feature]() and [I3D feature]() from Google Drive.
+2. Download [tube proposals](https://drive.google.com/file/d/1SHwXtlb7V8PH4_60-0-VZYL-7kXEG_Wj/view?usp=sharing), [RGB feature](https://drive.google.com/file/d/1ll_AkiByvQsJTdPNVt1TH6BUPbQxjvG_/view?usp=sharing) and [I3D feature](https://drive.google.com/file/d/1SwPGweipeuREZrAXGzu7nPACy9vXNmmp/view?usp=sharing) from Google Drive.
 
 3. Extract  *.tar files and make symlinks between the download data and the desired data folder
 
