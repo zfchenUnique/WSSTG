@@ -1,0 +1,20 @@
+CUDA_VISIBLE_DEVICES=0 python  ../fun/eval.py --epSize 1000 \
+    --dbSet vid \
+    --maxWordNum 20 --num_workers 0  --batchSize 1  --logFd  ../data/final_models/abs_  \
+    --outPre ../data/vd_model/ --biLoss \
+    --hdSize 300  --vwFlag  --stEp 0  --logFdTx ../data/tensorBoardX/ \
+    --vis_dim 4096 --set_name val\
+    --rpNum 30 --saveEp 1 \
+    --txt_type gru --pos_type none \
+    --lr 0.001 \
+    --vis_ftr_type rgb_i3d \
+    --margin 1 \
+    --vis_type lstm \
+    --visIter 1\
+    --server_id 36\
+    --wsMode coAtt \
+    --fc_feat_size 4096 \
+    --dim_ftr 512  \
+    --no_shuffle_flag \
+    --eval_test_flag \
+    --initmodel ../data/models/_ep_29_itr_0.pth \
