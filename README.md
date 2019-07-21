@@ -1,7 +1,7 @@
 # Weakly-Supervised Spatio-Temporally Grounding Natural Sentence in Video  
 
 This repo contains the main baselines of VID-sentence dataset introduced in WSSTG.
-Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](https://github.com/JeffCHEN2017/VID-sentence-private) for the information of VID-sentence dataset.
+Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](https://github.com/JeffCHEN2017/VID-sentence) for the information of VID-sentence dataset.
 
 
 ### Task
