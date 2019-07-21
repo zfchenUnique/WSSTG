@@ -83,7 +83,7 @@ sh scripts/train_video_emb_att.sh
 Notice: Because the changes of batch sizes and the random seed, the performance may be slightly different from our submission. We provide a checkpoint here which achieves similar performance (38.1 VS 38.2 on the  accuracy@0.5 ) to the model we reported in the paper.
 
 ### Testing
-Download the checkpoint from [Google Drive](https://drive.google.com/file/d/1oM0J4jIbcd4SYo9T29ydk3gugoOjFCKA/view?usp=sharing), put it WSSTG_ROOT/data/models and run
+Download the checkpoint from [Google Drive](https://drive.google.com/file/d/1oM0J4jIbcd4SYo9T29ydk3gugoOjFCKA/view?usp=sharing), put it in  WSSTG_ROOT/data/models and run
 ```Shell
 cd $WSSTG_ROOT
 sh scripts/test_video_emb_att.sh
