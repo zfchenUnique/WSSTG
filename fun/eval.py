@@ -65,7 +65,6 @@ if __name__=='__main__':
         pickledump(out_result_fn, acc_list)
 
     if opt.eval_test_flag:
-        pdb.set_trace()
         model.eval()
         resultList = list()
         vIdList = list()
