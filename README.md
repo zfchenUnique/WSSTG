@@ -49,8 +49,8 @@ Please refer to [our paper](https://arxiv.org/abs/1906.02549) and the [repo](htt
 1. Clone the WSSTG repository and VID-sentence reposity
 
 ```Shell
-    git clone https://github.com/JeffCHEN2017/WSSTL-private.git
-    git clone https://github.com/JeffCHEN2017/VID-Sentence-private.git
+    git clone https://github.com/JeffCHEN2017/WSSTG.git
+    git clone https://github.com/JeffCHEN2017/VID-Sentence.git
     ln -s VID-sentence_ROOT/data/ILSVRC WSSTG_ROOT/data
 ```
 2. Download [tube proposals](https://drive.google.com/file/d/1SHwXtlb7V8PH4_60-0-VZYL-7kXEG_Wj/view?usp=sharing), [RGB feature](https://drive.google.com/file/d/1ll_AkiByvQsJTdPNVt1TH6BUPbQxjvG_/view?usp=sharing) and [I3D feature](https://drive.google.com/file/d/1SwPGweipeuREZrAXGzu7nPACy9vXNmmp/view?usp=sharing) from Google Drive.
