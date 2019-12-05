@@ -21,11 +21,11 @@ import h5py
 def build_dataloader(opt):
     if opt.dbSet=='vid':
         ftrPath = '' # Path for frame level feature 
-        tubePath = '../data/ILSVRC/tubePrp' # Path for information of each tube proposals
+        tubePath = '../data/tubePrp' # Path for information of each tube proposals
         dictFile = '../data/dictForDb_vid_v2.pd' # Path for word embedding 
-        out_cached_folder = '../data/vid/vidTubeCacheFtr' # Path for RGB features of tubes
+        out_cached_folder = '../data/vid_rgb/vidTubeCacheFtr' # Path for RGB features of tubes
         ann_folder = '../data/ILSVRC' # Path for tube annotations 
-        i3d_ftr_path ='../data/video_feature/feature_extraction/tmp/vid' # Path for I3D features
+        i3d_ftr_path ='../data/vid_i3d' # Path for I3D features
         prp_type = 'coco_30_2' # frame-level proposal extractors
         mean_cache_ftr_path = '../data/vid/meanFeature' 
         ftr_context_path = '../data/vid/coco32/context/Data/VID'
