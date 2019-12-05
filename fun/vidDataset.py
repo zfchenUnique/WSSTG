@@ -22,7 +22,7 @@ from ptd_api import *
 from vidDatasetParser import *
 from multiprocessing import Process, Pipe, cpu_count, Queue
 #from vidDatasetParser import vidInfoParser
-from multiGraphAttention import extract_position_embedding 
+#from multiGraphAttention import extract_position_embedding 
 import h5py
 
 
