@@ -3,7 +3,7 @@ import pdb
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence
-from multiGraphAttention import *
+#from multiGraphAttention import *
 from netvlad import NetVLAD
 from classSST import *
 
