@@ -99,7 +99,7 @@ If you find this repo useful in your research, please consider citing:
 
     @inproceedings{chen2019weakly,
         Title={Weakly-Supervised Spatio-Temporally Grounding Natural Sentence in Video},
-        Author={Chen, Zhenfang and Ma, Lin and Luo, Wenhan and Wong, Kwan-Yee K},
+        Author={Chen, Zhenfang and Ma, Lin and Luo, Wenhan and Wong, Kwan-Yee~K},
         Booktitle={ACL},
         year={2019}
     }
